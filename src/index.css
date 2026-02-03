@@ -1,0 +1,154 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    /* App Background - Deep dark */
+    --background: 240 8% 7%;
+    --foreground: 240 5% 96%;
+
+    /* Card backgrounds - Slightly lighter than main bg */
+    --card: 240 6% 10%;
+    --card-foreground: 240 5% 96%;
+
+    /* Sidebar panel - Darkest */
+    --sidebar-bg: 240 10% 5%;
+    --sidebar-item: 240 5% 12%;
+    --sidebar-item-active: 240 8% 15%;
+
+    /* Editor panel - Medium dark */
+    --editor-bg: 240 7% 9%;
+    --editor-line: 240 4% 12%;
+
+    /* List panel - Between sidebar and editor */
+    --list-bg: 240 6% 8%;
+    --list-item: 240 5% 11%;
+    --list-item-hover: 240 5% 13%;
+    --list-item-active: 240 6% 14%;
+
+    /* Primary - Yellow accent */
+    --primary: 44 91% 54%;
+    --primary-hover: 44 91% 60%;
+    --primary-foreground: 240 10% 5%;
+
+    /* Secondary - Muted purple */
+    --secondary: 240 5% 15%;
+    --secondary-foreground: 240 5% 96%;
+
+    /* Accent - Bright purple for highlights */
+    --accent: 262 75% 60%;
+    --accent-foreground: 240 5% 96%;
+
+    /* Muted - For secondary text */
+    --muted: 240 5% 18%;
+    --muted-foreground: 240 5% 64%;
+
+    /* Success - For checkmarks, completed items */
+    --success: 142 76% 56%;
+    --success-foreground: 240 10% 5%;
+
+    /* Warning - For important items */
+    --warning: 38 92% 50%;
+    --warning-foreground: 240 10% 5%;
+
+    /* Destructive - For delete actions */
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 240 5% 96%;
+
+    /* Inverse (light) surface for flipped cards/details */
+    --surface-inverse: 0 0% 96%;
+    --surface-inverse-foreground: 240 10% 5%;
+
+    /* Borders - Subtle */
+    --border: 240 6% 16%;
+    --border-subtle: 240 6% 12%;
+
+    /* Input backgrounds */
+    --input: 240 6% 12%;
+    --input-border: 240 6% 20%;
+
+    /* Focus ring */
+    --ring: 262 80% 65%;
+
+    /* Popover */
+    --popover: 240 6% 10%;
+    --popover-foreground: 240 5% 96%;
+
+    /* Code blocks */
+    --code-bg: 240 8% 8%;
+    --code-border: 240 6% 14%;
+
+    /* Radius */
+    --radius: 0.5rem;
+
+    /* Sidebar tokens */
+    --sidebar-background: 240 10% 5%;
+    --sidebar-foreground: 240 5% 82%;
+    --sidebar-primary: 262 80% 65%;
+    --sidebar-primary-foreground: 240 5% 96%;
+    --sidebar-accent: 240 5% 12%;
+    --sidebar-accent-foreground: 240 5% 96%;
+    --sidebar-border: 240 6% 12%;
+    --sidebar-ring: 262 80% 65%;
+
+    /* Transitions */
+    --transition-smooth: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-bounce: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+
+    /* Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--primary-hover)) 100%);
+    --gradient-accent: linear-gradient(135deg, hsl(var(--accent)) 0%, hsl(262 85% 70%) 100%);
+    --gradient-subtle: linear-gradient(180deg, hsl(240 8% 9%) 0%, hsl(240 8% 7%) 100%);
+    
+    /* Shadows */
+    --shadow-sm: 0 1px 2px 0 hsl(240 10% 3% / 0.2);
+    --shadow-md: 0 4px 6px -1px hsl(240 10% 3% / 0.3), 0 2px 4px -1px hsl(240 10% 3% / 0.2);
+    --shadow-lg: 0 10px 15px -3px hsl(240 10% 3% / 0.4), 0 4px 6px -2px hsl(240 10% 3% / 0.3);
+    --shadow-glow: 0 0 20px hsl(var(--primary) / 0.3);
+    --shadow-accent-glow: 0 0 20px hsl(var(--accent) / 0.25);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+  /* 3D Card Flip Utilities */
+  .perspective-1000 {
+    perspective: 1000px;
+  }
+
+  .preserve-3d {
+    transform-style: preserve-3d;
+  }
+
+  .backface-hidden {
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+  }
+
+  .rotate-y-180 {
+    transform: rotateY(180deg);
+  }
+
+  /* Inverse surface helpers */
+  .bg-surface-inverse {
+    background-color: hsl(var(--surface-inverse));
+  }
+  .text-surface-inverse-foreground {
+    color: hsl(var(--surface-inverse-foreground));
+  }
+}
+

@@ -1,0 +1,338 @@
+import { useState, useMemo, useEffect } from "react";
+import { UnifiedSidebar } from "@/components/UnifiedSidebar";
+import { NotesList } from "@/components/NotesList";
+import { BlockEditor } from "@/components/BlockEditor";
+import { UnifiedMarkdownEditor } from "@/components/UnifiedMarkdownEditor";
+import { VisualEditor } from "@/components/VisualEditor";
+import { NoteDetailsView } from "@/components/NoteDetailsView";
+import { Breadcrumbs } from "@/components/Breadcrumbs";
+import { NoteTabs } from "@/components/NoteTabs";
+import { Button } from "@/components/ui/button";
+import { Eye, Moon, Folder, FolderX } from "lucide-react";
+import { useNotesStore, Block, VisualNode, EditorType } from "@/store/notesStore";
+
+const Index = () => {
+  const { systems, notes, getNote, updateNoteContent, updateNote, addNote, deleteNote } = useNotesStore();
+
+  const [selectedNoteId, setSelectedNoteId] = useState<string | undefined>("1");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [notesVisible, setNotesVisible] = useState(true);
+  const [focusMode, setFocusMode] = useState(false);
+  const [invertColors, setInvertColors] = useState(false);
+  const [showNoteDetails, setShowNoteDetails] = useState(false);
+  const [detailsNoteTitle, setDetailsNoteTitle] = useState("");
+  const [editorType, setEditorType] = useState<EditorType>("modular");
+  const [selectedSystemId, setSelectedSystemId] = useState<string | "all">("system-1");
+  const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>("project-1");
+
+  // Build tabs from notes in store
+  const [openTabs, setOpenTabs] = useState(() => {
+    // Start with first few notes as open tabs
+    return notes.slice(0, 5).map(note => ({
+      id: note.id,
+      title: note.title,
+      type: note.editorType,
+    }));
+  });
+  const [activeTabId, setActiveTabId] = useState(openTabs[0]?.id || "1");
+
+  // Sync tab titles with store notes when notes change
+  useEffect(() => {
+    setOpenTabs(prevTabs =>
+      prevTabs.map(tab => {
+        const note = notes.find(n => n.id === tab.id);
+        if (note && note.title !== tab.title) {
+          return { ...tab, title: note.title };
+        }
+        return tab;
+      })
+    );
+  }, [notes]);
+
+  const handleTabClose = (tabId: string) => {
+    const newTabs = openTabs.filter(tab => tab.id !== tabId);
+    setOpenTabs(newTabs);
+    if (activeTabId === tabId && newTabs.length > 0) {
+      setActiveTabId(newTabs[0].id);
+    }
+  };
+
+  const handleTabRename = (tabId: string, newTitle: string) => {
+    // Update tab title in local state
+    setOpenTabs(openTabs.map(tab =>
+      tab.id === tabId ? { ...tab, title: newTitle } : tab
+    ));
+    // Update note title in store
+    updateNote(tabId, { title: newTitle });
+  };
+
+  const handleNoteSelect = (noteId: string, type: EditorType = "modular") => {
+    setSelectedNoteId(noteId);
+    setActiveTabId(noteId);
+    setEditorType(type);
+
+    const note = getNote(noteId);
+    const title = note?.title || `Note ${noteId}`;
+    const noteType = note?.editorType || type;
+
+    if (!openTabs.find(tab => tab.id === noteId)) {
+      setOpenTabs([...openTabs, { id: noteId, title, type: noteType }]);
+    }
+  };
+
+  const handleSystemProjectSelect = (systemId: string | "all", projectId?: string) => {
+    setSelectedSystemId(systemId);
+    setSelectedProjectId(projectId);
+  };
+
+  // Handle content changes from editors
+  const handleContentChange = (content: Block[] | string | VisualNode[]) => {
+    if (activeTabId) {
+      updateNoteContent(activeTabId, content);
+    }
+  };
+
+  // Build breadcrumb path dynamically
+  const breadcrumbItems = useMemo(() => {
+    const items: { label: string; href?: string }[] = [];
+
+    // Add system
+    if (selectedSystemId && selectedSystemId !== "all") {
+      const system = systems.find(s => s.id === selectedSystemId);
+      if (system) {
+        items.push({ label: system.name, href: `/systems/${system.id}` });
+        
+        // Add project
+        if (selectedProjectId) {
+          const project = system.projects.find(p => p.id === selectedProjectId);
+          if (project) {
+            items.push({ label: project.name, href: `/projects/${project.id}` });
+          }
+        }
+      }
+    } else if (selectedSystemId === "all") {
+      items.push({ label: "All Systems" });
+    }
+
+    // Add note
+    const activeTab = openTabs.find(tab => tab.id === activeTabId);
+    if (activeTab) {
+      items.push({ label: activeTab.title });
+    }
+
+    return items;
+  }, [selectedSystemId, selectedProjectId, activeTabId, openTabs]);
+
+  const handleDetailsRename = (newTitle: string) => {
+    if (selectedNoteId) {
+      updateNote(selectedNoteId, { title: newTitle });
+      setDetailsNoteTitle(newTitle);
+      // Also update the tab title if open
+      setOpenTabs(openTabs.map(tab =>
+        tab.id === selectedNoteId ? { ...tab, title: newTitle } : tab
+      ));
+    }
+  };
+
+  const handleDetailsDelete = () => {
+    if (selectedNoteId) {
+      deleteNote(selectedNoteId);
+      // Close the tab if open
+      handleTabClose(selectedNoteId);
+      // Exit details view
+      setShowNoteDetails(false);
+      // Select another note if available
+      const remainingNotes = notes.filter(n => n.id !== selectedNoteId);
+      if (remainingNotes.length > 0) {
+        setSelectedNoteId(remainingNotes[0].id);
+      } else {
+        setSelectedNoteId(undefined);
+      }
+    }
+  };
+
+  const renderEditor = () => {
+    if (showNoteDetails) {
+      return (
+        <NoteDetailsView
+          noteId={selectedNoteId || ""}
+          noteTitle={detailsNoteTitle}
+          onRename={handleDetailsRename}
+          onDelete={handleDetailsDelete}
+        />
+      );
+    }
+
+    const activeTab = openTabs.find(tab => tab.id === activeTabId);
+    const currentEditorType = activeTab?.type || editorType;
+    const currentNote = getNote(activeTabId);
+
+    // Get content from store, with fallbacks
+    const getBlockContent = (): Block[] => {
+      if (currentNote?.content && Array.isArray(currentNote.content)) {
+        // Check if it's block content (has 'type' property with block types)
+        const first = currentNote.content[0] as any;
+        if (first && first.type && ["heading", "paragraph", "code", "list", "image", "section"].includes(first.type)) {
+          return currentNote.content as Block[];
+        }
+      }
+      return [
+        { id: "1", type: "heading", content: "New Note", metadata: { level: 1 } },
+        { id: "2", type: "paragraph", content: "Start writing here..." },
+      ];
+    };
+
+    const getTextContent = (): string => {
+      if (currentNote?.content && typeof currentNote.content === "string") {
+        return currentNote.content;
+      }
+      return "# New Note\n\nStart writing here...";
+    };
+
+    const getVisualContent = (): VisualNode[] => {
+      if (currentNote?.content && Array.isArray(currentNote.content)) {
+        const first = currentNote.content[0] as any;
+        if (first && first.type && ["start", "process", "decision", "end"].includes(first.type)) {
+          return currentNote.content as VisualNode[];
+        }
+      }
+      return [{ id: "1", type: "start", label: "Start", x: 200, y: 100 }];
+    };
+
+    switch (currentEditorType) {
+      case "standard":
+      case "typography":
+        return (
+          <UnifiedMarkdownEditor
+            focusMode={focusMode}
+            content={getTextContent()}
+            onChange={(content) => handleContentChange(content)}
+          />
+        );
+      case "visual":
+        return (
+          <VisualEditor
+            focusMode={focusMode}
+            nodes={getVisualContent()}
+            onChange={(nodes) => handleContentChange(nodes)}
+          />
+        );
+      case "modular":
+      default:
+        return (
+          <BlockEditor
+            initialBlocks={getBlockContent()}
+            focusMode={focusMode}
+            onChange={(blocks) => handleContentChange(blocks)}
+          />
+        );
+    }
+  };
+
+  return (
+    <div 
+      className="flex h-screen w-full overflow-hidden bg-background text-foreground"
+      style={invertColors ? { filter: 'invert(1) hue-rotate(180deg)' } : {}}
+    >
+      {!focusMode && (
+        <UnifiedSidebar 
+          collapsed={sidebarCollapsed}
+          onNoteSelect={handleNoteSelect} 
+          selectedNoteId={selectedNoteId}
+          onSystemProjectSelect={handleSystemProjectSelect}
+        />
+      )}
+
+      {/* Notes Sidebar */}
+      {notesVisible && !focusMode && (
+        <NotesList 
+          onNoteSelect={handleNoteSelect} 
+          selectedNoteId={selectedNoteId}
+          filterSystemId={selectedSystemId}
+          filterProjectId={selectedProjectId}
+          onCardFlip={(isFlipped, noteTitle) => {
+            setShowNoteDetails(isFlipped);
+            setDetailsNoteTitle(noteTitle);
+          }}
+        />
+      )}
+
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col relative overflow-hidden">
+        {/* Exit Focus Mode Button */}
+        {focusMode && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="absolute top-4 right-4 z-50 gap-2"
+            onClick={() => setFocusMode(false)}
+          >
+            <Eye className="w-4 h-4" />
+            Exit Focus Mode
+          </Button>
+        )}
+
+        {/* Top Bar with Breadcrumbs and View Controls */}
+        {!focusMode && (
+          <div className="h-12 border-b border-border bg-card/50 backdrop-blur-sm flex items-center px-4 gap-4 shadow-sm">
+            <div className="flex-1 overflow-x-auto overflow-y-hidden scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
+              <Breadcrumbs items={breadcrumbItems} />
+            </div>
+          
+          <div className="ml-auto flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="w-8 h-8"
+              onClick={() => setNotesVisible(!notesVisible)}
+              title={notesVisible ? "Hide Notes Sidebar" : "Show Notes Sidebar"}
+            >
+              {notesVisible ? (
+                <Folder className="w-4 h-4" />
+              ) : (
+                <FolderX className="w-4 h-4" />
+              )}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="w-8 h-8"
+              onClick={() => setFocusMode(!focusMode)}
+              title="Focus Mode"
+            >
+              <Eye className={`w-4 h-4 ${focusMode ? 'text-primary' : ''}`} />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="w-8 h-8"
+              onClick={() => setInvertColors(!invertColors)}
+              title="Invert Colors"
+            >
+              <Moon className={`w-4 h-4 ${invertColors ? 'text-primary' : ''}`} />
+            </Button>
+          </div>
+        </div>
+        )}
+
+        {/* Tabs */}
+        {!focusMode && openTabs.length > 0 && (
+          <NoteTabs
+            tabs={openTabs}
+            activeTabId={activeTabId}
+            onTabSelect={(tabId) => {
+              setActiveTabId(tabId);
+              setSelectedNoteId(tabId);
+            }}
+            onTabClose={handleTabClose}
+            onTabRename={handleTabRename}
+          />
+        )}
+
+        {renderEditor()}
+      </div>
+    </div>
+  );
+};
+
+export default Index;

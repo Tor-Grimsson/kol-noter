@@ -1,0 +1,472 @@
+import { createContext, useContext, ReactNode } from "react";
+import { useLocalStorage } from "@/hooks/useLocalStorage";
+
+// Types
+export type EditorType = "modular" | "standard" | "visual" | "typography";
+
+export interface Block {
+  id: string;
+  type: "heading" | "paragraph" | "code" | "list" | "image" | "section";
+  content: string;
+  metadata?: {
+    level?: number;
+    language?: string;
+    listType?: "bullet" | "numbered";
+    columns?: 1 | 2;
+  };
+}
+
+export interface VisualNode {
+  id: string;
+  type: "start" | "process" | "decision" | "end";
+  label: string;
+  x: number;
+  y: number;
+  connections?: string[];
+}
+
+export interface Project {
+  id: string;
+  name: string;
+}
+
+export interface System {
+  id: string;
+  name: string;
+  projects: Project[];
+}
+
+export interface Note {
+  id: string;
+  title: string;
+  preview: string;
+  date: string;
+  tags: string[];
+  favorite?: boolean;
+  color?: string;
+  systemId: string;
+  projectId: string;
+  editorType: EditorType;
+  content: Block[] | string | VisualNode[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+interface NotesStore {
+  systems: System[];
+  notes: Note[];
+  trash: Note[];
+  // System operations
+  addSystem: (name: string) => System;
+  updateSystem: (id: string, name: string) => void;
+  deleteSystem: (id: string) => void;
+  // Project operations
+  addProject: (systemId: string, name: string) => Project | null;
+  updateProject: (systemId: string, projectId: string, name: string) => void;
+  deleteProject: (systemId: string, projectId: string) => void;
+  // Note operations
+  addNote: (systemId: string, projectId: string, editorType: EditorType) => Note;
+  updateNote: (id: string, updates: Partial<Omit<Note, "id">>) => void;
+  updateNoteContent: (id: string, content: Block[] | string | VisualNode[]) => void;
+  deleteNote: (id: string) => void;
+  restoreNote: (id: string) => void;
+  permanentlyDeleteNote: (id: string) => void;
+  emptyTrash: () => void;
+  getNote: (id: string) => Note | undefined;
+  getNotesByProject: (systemId: string, projectId: string) => Note[];
+  getNotesBySystem: (systemId: string) => Note[];
+}
+
+// Default data
+const defaultSystems: System[] = [
+  {
+    id: "system-1",
+    name: "Work",
+    projects: [
+      { id: "project-1", name: "Engineering" },
+      { id: "project-2", name: "Product" },
+    ],
+  },
+  {
+    id: "system-2",
+    name: "Personal",
+    projects: [
+      { id: "project-3", name: "Learning" },
+    ],
+  },
+];
+
+const defaultBlocks: Block[] = [
+  {
+    id: "1",
+    type: "heading",
+    content: "New Note",
+    metadata: { level: 1 },
+  },
+  {
+    id: "2",
+    type: "paragraph",
+    content: "Start writing here...",
+  },
+];
+
+const defaultNotes: Note[] = [
+  {
+    id: "1",
+    title: "Project Tasks Summary",
+    preview: "This document outlines the refactoring and animation tasks discussed...",
+    date: "2 mins ago",
+    tags: ["work", "urgent"],
+    favorite: true,
+    color: "warning",
+    systemId: "system-1",
+    projectId: "project-1",
+    editorType: "modular",
+    content: [
+      { id: "1", type: "heading", content: "Project Tasks Summary", metadata: { level: 1 } },
+      { id: "2", type: "paragraph", content: "This document outlines the refactoring and animation tasks discussed." },
+      { id: "3", type: "section", content: "Completed Tasks" },
+      { id: "4", type: "heading", content: "Task 1: Deprecate Custom Design System", metadata: { level: 2 } },
+      { id: "5", type: "paragraph", content: "The initial task was to refactor the entire frontend to remove the custom CSS utility classes defined in index.css." },
+    ],
+    createdAt: Date.now() - 120000,
+    updatedAt: Date.now() - 120000,
+  },
+  {
+    id: "2",
+    title: "Router Config",
+    preview: "Configuration for routing system and navigation patterns...",
+    date: "10 mins ago",
+    tags: ["config"],
+    color: "accent",
+    systemId: "system-1",
+    projectId: "project-1",
+    editorType: "standard",
+    content: "# Router Config\n\nConfiguration for routing system and navigation patterns.\n\n## Routes\n\n- `/` - Home\n- `/projects` - Projects view\n- `/hierarchy` - Hierarchy view",
+    createdAt: Date.now() - 600000,
+    updatedAt: Date.now() - 600000,
+  },
+  {
+    id: "FAD",
+    title: "FAD",
+    preview: "Frequently accessed data and personal notes...",
+    date: "30 mins ago",
+    tags: ["personal"],
+    favorite: true,
+    color: "primary",
+    systemId: "system-2",
+    projectId: "project-3",
+    editorType: "visual",
+    content: [
+      { id: "node-1", type: "start", label: "Start", x: 100, y: 100 },
+      { id: "node-2", type: "process", label: "Process Data", x: 100, y: 200 },
+      { id: "node-3", type: "end", label: "End", x: 100, y: 300 },
+    ],
+    createdAt: Date.now() - 1800000,
+    updatedAt: Date.now() - 1800000,
+  },
+  {
+    id: "3",
+    title: "Meeting Notes",
+    preview: "Q4 planning session with product team...",
+    date: "1 hour ago",
+    tags: ["meetings"],
+    color: "success",
+    systemId: "system-1",
+    projectId: "project-2",
+    editorType: "modular",
+    content: [
+      { id: "1", type: "heading", content: "Meeting Notes", metadata: { level: 1 } },
+      { id: "2", type: "paragraph", content: "Q4 planning session with product team." },
+    ],
+    createdAt: Date.now() - 3600000,
+    updatedAt: Date.now() - 3600000,
+  },
+  {
+    id: "4",
+    title: "Design System",
+    preview: "Typography guidelines, spacing tokens, and color palette...",
+    date: "2 hours ago",
+    tags: ["design"],
+    color: "accent",
+    systemId: "system-1",
+    projectId: "project-2",
+    editorType: "typography",
+    content: "",
+    createdAt: Date.now() - 7200000,
+    updatedAt: Date.now() - 7200000,
+  },
+  {
+    id: "5",
+    title: "API Documentation",
+    preview: "REST endpoints, authentication flow, and rate limits...",
+    date: "Yesterday",
+    tags: ["docs", "api"],
+    color: "primary",
+    systemId: "system-1",
+    projectId: "project-1",
+    editorType: "standard",
+    content: "# API Documentation\n\nREST endpoints, authentication flow, and rate limits.",
+    createdAt: Date.now() - 86400000,
+    updatedAt: Date.now() - 86400000,
+  },
+];
+
+// Context
+const NotesContext = createContext<NotesStore | null>(null);
+
+// Provider
+export function NotesProvider({ children }: { children: ReactNode }) {
+  const [systems, setSystems] = useLocalStorage<System[]>("kol-noter-systems", defaultSystems);
+  const [notes, setNotes] = useLocalStorage<Note[]>("kol-noter-notes", defaultNotes);
+  const [trash, setTrash] = useLocalStorage<Note[]>("kol-noter-trash", []);
+
+  // Generate unique ID
+  const generateId = () => `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+  // Format relative date
+  const formatDate = () => {
+    return new Date().toLocaleString();
+  };
+
+  // System operations
+  const addSystem = (name: string): System => {
+    const newSystem: System = {
+      id: generateId(),
+      name,
+      projects: [],
+    };
+    setSystems([...systems, newSystem]);
+    return newSystem;
+  };
+
+  const updateSystem = (id: string, name: string) => {
+    setSystems(systems.map(s => s.id === id ? { ...s, name } : s));
+  };
+
+  const deleteSystem = (id: string) => {
+    setSystems(systems.filter(s => s.id !== id));
+    // Also delete all notes in this system
+    setNotes(notes.filter(n => n.systemId !== id));
+  };
+
+  // Project operations
+  const addProject = (systemId: string, name: string): Project | null => {
+    const newProject: Project = {
+      id: generateId(),
+      name,
+    };
+    const systemIndex = systems.findIndex(s => s.id === systemId);
+    if (systemIndex === -1) return null;
+
+    const updatedSystems = [...systems];
+    updatedSystems[systemIndex] = {
+      ...updatedSystems[systemIndex],
+      projects: [...updatedSystems[systemIndex].projects, newProject],
+    };
+    setSystems(updatedSystems);
+    return newProject;
+  };
+
+  const updateProject = (systemId: string, projectId: string, name: string) => {
+    setSystems(systems.map(s => {
+      if (s.id !== systemId) return s;
+      return {
+        ...s,
+        projects: s.projects.map(p => p.id === projectId ? { ...p, name } : p),
+      };
+    }));
+  };
+
+  const deleteProject = (systemId: string, projectId: string) => {
+    setSystems(systems.map(s => {
+      if (s.id !== systemId) return s;
+      return {
+        ...s,
+        projects: s.projects.filter(p => p.id !== projectId),
+      };
+    }));
+    // Also delete all notes in this project
+    setNotes(notes.filter(n => !(n.systemId === systemId && n.projectId === projectId)));
+  };
+
+  // Note operations
+  const addNote = (systemId: string, projectId: string, editorType: EditorType): Note => {
+    const now = Date.now();
+    let defaultContent: Block[] | string | VisualNode[];
+
+    switch (editorType) {
+      case "standard":
+        defaultContent = "# New Note\n\nStart writing here...";
+        break;
+      case "visual":
+        defaultContent = [
+          { id: generateId(), type: "start", label: "Start", x: 200, y: 100 },
+        ];
+        break;
+      case "typography":
+        defaultContent = "";
+        break;
+      case "modular":
+      default:
+        defaultContent = [
+          { id: generateId(), type: "heading", content: "New Note", metadata: { level: 1 } },
+          { id: generateId(), type: "paragraph", content: "Start writing here..." },
+        ];
+        break;
+    }
+
+    const newNote: Note = {
+      id: generateId(),
+      title: "New Note",
+      preview: "Start writing here...",
+      date: formatDate(),
+      tags: [],
+      systemId,
+      projectId,
+      editorType,
+      content: defaultContent,
+      createdAt: now,
+      updatedAt: now,
+    };
+    setNotes([newNote, ...notes]);
+    return newNote;
+  };
+
+  const updateNote = (id: string, updates: Partial<Omit<Note, "id">>) => {
+    setNotes(notes.map(n => {
+      if (n.id !== id) return n;
+      return {
+        ...n,
+        ...updates,
+        updatedAt: Date.now(),
+      };
+    }));
+  };
+
+  const updateNoteContent = (id: string, content: Block[] | string | VisualNode[]) => {
+    setNotes(notes.map(n => {
+      if (n.id !== id) return n;
+
+      // Extract title and preview based on content type
+      let title = n.title;
+      let preview = n.preview;
+
+      if (typeof content === "string") {
+        // For markdown: extract first heading (# Title)
+        const headingMatch = content.match(/^#\s+(.+)$/m);
+        if (headingMatch) {
+          title = headingMatch[1].trim();
+        }
+        // Preview: strip markdown headings, take first 100 chars
+        preview = content.replace(/^#+\s+/gm, "").slice(0, 100).trim();
+      } else if (Array.isArray(content) && content.length > 0) {
+        const firstItem = content[0] as any;
+
+        // Block content (has 'type' like heading, paragraph, etc.)
+        if (firstItem.type && ["heading", "paragraph", "code", "list", "image", "section"].includes(firstItem.type)) {
+          // Find first heading for title
+          const headingBlock = (content as Block[]).find(b => b.type === "heading");
+          if (headingBlock && headingBlock.content) {
+            title = headingBlock.content.trim();
+          }
+          // Preview from first content block
+          const contentBlock = (content as Block[]).find(b => b.content && b.type !== "section");
+          if (contentBlock) {
+            preview = contentBlock.content.slice(0, 100).trim();
+          }
+        }
+        // Visual nodes (has 'type' like start, process, etc.)
+        else if (firstItem.type && ["start", "process", "decision", "end"].includes(firstItem.type)) {
+          // Use first node's label as title if it's meaningful
+          if (firstItem.label && firstItem.label !== "Start") {
+            title = firstItem.label;
+          }
+          preview = `Flowchart with ${content.length} nodes`;
+        }
+      }
+
+      return {
+        ...n,
+        title,
+        content,
+        preview,
+        date: "Just now",
+        updatedAt: Date.now(),
+      };
+    }));
+  };
+
+  const deleteNote = (id: string) => {
+    const noteToDelete = notes.find(n => n.id === id);
+    if (noteToDelete) {
+      setTrash([noteToDelete, ...trash]);
+      setNotes(notes.filter(n => n.id !== id));
+    }
+  };
+
+  const restoreNote = (id: string) => {
+    const noteToRestore = trash.find(n => n.id === id);
+    if (noteToRestore) {
+      setNotes([noteToRestore, ...notes]);
+      setTrash(trash.filter(n => n.id !== id));
+    }
+  };
+
+  const permanentlyDeleteNote = (id: string) => {
+    setTrash(trash.filter(n => n.id !== id));
+  };
+
+  const emptyTrash = () => {
+    setTrash([]);
+  };
+
+  const getNote = (id: string): Note | undefined => {
+    return notes.find(n => n.id === id);
+  };
+
+  const getNotesByProject = (systemId: string, projectId: string): Note[] => {
+    return notes.filter(n => n.systemId === systemId && n.projectId === projectId);
+  };
+
+  const getNotesBySystem = (systemId: string): Note[] => {
+    return notes.filter(n => n.systemId === systemId);
+  };
+
+  const store: NotesStore = {
+    systems,
+    notes,
+    trash,
+    addSystem,
+    updateSystem,
+    deleteSystem,
+    addProject,
+    updateProject,
+    deleteProject,
+    addNote,
+    updateNote,
+    updateNoteContent,
+    deleteNote,
+    restoreNote,
+    permanentlyDeleteNote,
+    emptyTrash,
+    getNote,
+    getNotesByProject,
+    getNotesBySystem,
+  };
+
+  return (
+    <NotesContext.Provider value={store}>
+      {children}
+    </NotesContext.Provider>
+  );
+}
+
+// Hook to use the store
+export function useNotesStore() {
+  const context = useContext(NotesContext);
+  if (!context) {
+    throw new Error("useNotesStore must be used within a NotesProvider");
+  }
+  return context;
+}
