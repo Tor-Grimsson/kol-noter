@@ -32,6 +32,18 @@ export const TAG_COLOR_PRESETS = [
   { name: 'gray', value: '#6b7280' },
 ];
 
+export const EXPLORER_COLORS = [
+  { name: "blue", value: "#49a0a2" },
+  { name: "green", value: "#66a44c" },
+  { name: "yellow", value: "#ffe32e" },
+  { name: "red", value: "#ce4646" },
+  { name: "orange", value: "#db8000" },
+  { name: "purple", value: "#9437ff" },
+  { name: "gray", value: "#6b7280" },
+];
+
+export const EXPLORER_ICONS = ["folder", "star", "heart", "code", "book", "briefcase", "home", "music"];
+
 export interface Block {
   id: string;
   type: "heading" | "paragraph" | "code" | "list" | "image" | "section";
@@ -58,16 +70,28 @@ export interface Reminder {
   text: string;
 }
 
+export interface Attachment {
+  id: string;
+  type: 'image' | 'file' | 'link';
+  url: string;  // data URL for uploads, external URL for links
+  name: string;
+  createdAt: number;
+  size?: number;
+  mimeType?: string;
+}
+
 export interface Project {
   id: string;
   name: string;
   description?: string;
   tags?: string[];
   tagColors?: { [tagName: string]: string };
-  attachments?: { [filename: string]: string };
+  attachments?: Attachment[];
   mentions?: string[]; // IDs of linked items
   reminders?: Reminder[];
   metrics?: ItemMetrics;
+  color?: string;
+  icon?: string;
   createdAt?: number;
   updatedAt?: number;
 }
@@ -78,9 +102,12 @@ export interface System {
   description?: string;
   tags?: string[];
   tagColors?: { [tagName: string]: string };
-  attachments?: { [filename: string]: string };
+  attachments?: Attachment[];
   mentions?: string[]; // IDs of linked items
   reminders?: Reminder[];
+  metrics?: ItemMetrics;
+  color?: string;
+  icon?: string;
   createdAt?: number;
   updatedAt?: number;
   projects: Project[];
@@ -144,6 +171,15 @@ interface NotesStore {
   // Metrics operations
   updateNoteMetrics: (noteId: string, metrics: Partial<ItemMetrics>) => void;
   updateProjectMetrics: (systemId: string, projectId: string, metrics: Partial<ItemMetrics>) => void;
+  updateSystemMetrics: (systemId: string, metrics: Partial<ItemMetrics>) => void;
+  // Color/Icon operations
+  updateSystemColorIcon: (id: string, color?: string, icon?: string) => void;
+  updateProjectColorIcon: (systemId: string, projectId: string, color?: string, icon?: string) => void;
+  // Attachment operations
+  addSystemAttachment: (systemId: string, attachment: Omit<Attachment, 'id' | 'createdAt'>) => void;
+  removeSystemAttachment: (systemId: string, attachmentId: string) => void;
+  addProjectAttachment: (systemId: string, projectId: string, attachment: Omit<Attachment, 'id' | 'createdAt'>) => void;
+  removeProjectAttachment: (systemId: string, projectId: string, attachmentId: string) => void;
 }
 
 // Default data
@@ -707,6 +743,123 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     }));
   };
 
+  // Update metrics for a system
+  const updateSystemMetrics = (systemId: string, metrics: Partial<ItemMetrics>) => {
+    setSystems(systems.map(s => {
+      if (s.id !== systemId) return s;
+      return {
+        ...s,
+        metrics: {
+          ...s.metrics,
+          ...metrics,
+        },
+        updatedAt: Date.now(),
+      };
+    }));
+  };
+
+  // Update color/icon for a system
+  const updateSystemColorIcon = (id: string, color?: string, icon?: string) => {
+    setSystems(systems.map(s => {
+      if (s.id !== id) return s;
+      return {
+        ...s,
+        ...(color !== undefined && { color }),
+        ...(icon !== undefined && { icon }),
+        updatedAt: Date.now(),
+      };
+    }));
+  };
+
+  // Update color/icon for a project
+  const updateProjectColorIcon = (systemId: string, projectId: string, color?: string, icon?: string) => {
+    setSystems(systems.map(s => {
+      if (s.id !== systemId) return s;
+      return {
+        ...s,
+        projects: s.projects.map(p => {
+          if (p.id !== projectId) return p;
+          return {
+            ...p,
+            ...(color !== undefined && { color }),
+            ...(icon !== undefined && { icon }),
+            updatedAt: Date.now(),
+          };
+        }),
+      };
+    }));
+  };
+
+  // Add attachment to a system
+  const addSystemAttachment = (systemId: string, attachment: Omit<Attachment, 'id' | 'createdAt'>) => {
+    const newAttachment: Attachment = {
+      ...attachment,
+      id: crypto.randomUUID(),
+      createdAt: Date.now(),
+    };
+    setSystems(systems.map(s => {
+      if (s.id !== systemId) return s;
+      return {
+        ...s,
+        attachments: [...(s.attachments || []), newAttachment],
+        updatedAt: Date.now(),
+      };
+    }));
+  };
+
+  // Remove attachment from a system
+  const removeSystemAttachment = (systemId: string, attachmentId: string) => {
+    setSystems(systems.map(s => {
+      if (s.id !== systemId) return s;
+      return {
+        ...s,
+        attachments: (s.attachments || []).filter(a => a.id !== attachmentId),
+        updatedAt: Date.now(),
+      };
+    }));
+  };
+
+  // Add attachment to a project
+  const addProjectAttachment = (systemId: string, projectId: string, attachment: Omit<Attachment, 'id' | 'createdAt'>) => {
+    const newAttachment: Attachment = {
+      ...attachment,
+      id: crypto.randomUUID(),
+      createdAt: Date.now(),
+    };
+    setSystems(systems.map(s => {
+      if (s.id !== systemId) return s;
+      return {
+        ...s,
+        projects: s.projects.map(p => {
+          if (p.id !== projectId) return p;
+          return {
+            ...p,
+            attachments: [...(p.attachments || []), newAttachment],
+            updatedAt: Date.now(),
+          };
+        }),
+      };
+    }));
+  };
+
+  // Remove attachment from a project
+  const removeProjectAttachment = (systemId: string, projectId: string, attachmentId: string) => {
+    setSystems(systems.map(s => {
+      if (s.id !== systemId) return s;
+      return {
+        ...s,
+        projects: s.projects.map(p => {
+          if (p.id !== projectId) return p;
+          return {
+            ...p,
+            attachments: (p.attachments || []).filter(a => a.id !== attachmentId),
+            updatedAt: Date.now(),
+          };
+        }),
+      };
+    }));
+  };
+
   const store: NotesStore = {
     systems,
     notes,
@@ -739,6 +892,13 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     updateSystemTagColor,
     updateNoteMetrics,
     updateProjectMetrics,
+    updateSystemMetrics,
+    updateSystemColorIcon,
+    updateProjectColorIcon,
+    addSystemAttachment,
+    removeSystemAttachment,
+    addProjectAttachment,
+    removeProjectAttachment,
   };
 
   return (

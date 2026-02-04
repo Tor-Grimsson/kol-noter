@@ -1,13 +1,28 @@
 import { useState, useRef, useEffect } from "react";
 import { cn } from "@/lib/utils";
-import { RotateCcw, Star, Calendar, Paperclip, Image as ImageIcon, FileText, Pencil, Trash2 } from "lucide-react";
+import { RotateCcw, Star, Calendar, Paperclip, Image as ImageIcon, FileText, Pencil, Trash2, Circle } from "lucide-react";
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuTrigger,
+  ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
 } from "@/components/ui/context-menu";
 import { Input } from "@/components/ui/input";
+
+const CARD_COLORS = [
+  { name: "blue", value: "#49a0a2" },
+  { name: "green", value: "#66a44c" },
+  { name: "yellow", value: "#ffe32e" },
+  { name: "red", value: "#ce4646" },
+  { name: "orange", value: "#db8000" },
+  { name: "purple", value: "#9437ff" },
+  { name: "dark", value: "#121215" },
+  { name: "warm", value: "#d0d79d" },
+];
 
 interface Note {
   id: string;
@@ -17,22 +32,31 @@ interface Note {
   tags: string[];
   favorite?: boolean;
   color?: string;
+  createdAt: number;
+  updatedAt: number;
+  attachments?: { [filename: string]: string };
+  photos?: { id: string; name: string; dataUrl: string; addedAt: number }[];
 }
 
 interface NoteCardProps {
   note: Note;
   selectedNoteId?: string;
   onSelect: (id: string) => void;
-  onFlip?: (isFlipped: boolean, noteTitle: string) => void;
+  onFlip?: (isFlipped: boolean, noteId: string | undefined) => void;
   onRename?: (id: string, newTitle: string) => void;
   onDelete?: (id: string) => void;
+  onColorChange?: (id: string, color: string) => void;
 }
 
-export const NoteCard = ({ note, selectedNoteId, onSelect, onFlip, onRename, onDelete }: NoteCardProps) => {
+export const NoteCard = ({ note, selectedNoteId, onSelect, onFlip, onRename, onDelete, onColorChange }: NoteCardProps) => {
   const [isFlipped, setIsFlipped] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(note.title);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Reset flip state when card is no longer selected
+  const isSelected = selectedNoteId === note.id;
+  const displayIsFlipped = isSelected ? isFlipped : false;
 
   // Focus input when editing starts
   useEffect(() => {
@@ -68,7 +92,7 @@ export const NoteCard = ({ note, selectedNoteId, onSelect, onFlip, onRename, onD
     e.stopPropagation();
     const newFlipped = !isFlipped;
     setIsFlipped(newFlipped);
-    onFlip?.(newFlipped, note.title);
+    onFlip?.(newFlipped, newFlipped ? note.id : undefined);
   };
 
   return (
@@ -78,7 +102,7 @@ export const NoteCard = ({ note, selectedNoteId, onSelect, onFlip, onRename, onD
           <div
             className={cn(
               "relative w-full transition-transform duration-500 preserve-3d",
-              isFlipped && "rotate-y-180"
+              displayIsFlipped && "rotate-y-180"
             )}
             style={{ transformStyle: "preserve-3d" }}
           >
@@ -92,19 +116,22 @@ export const NoteCard = ({ note, selectedNoteId, onSelect, onFlip, onRename, onD
                 selectedNoteId === note.id
                   ? "bg-list-active border-border"
                   : "border-border/60",
-                isFlipped && "opacity-0 pointer-events-none"
+                displayIsFlipped && "opacity-0 pointer-events-none"
               )}
-              style={note.color ? {
-                borderLeft: selectedNoteId === note.id ? `3px solid hsl(var(--${note.color}))` : undefined
-              } : undefined}
+              style={{
+                borderLeft: note.color ? `4px solid ${note.color}` : undefined
+              }}
             >
           <div className="flex items-start justify-between gap-2 mb-2">
-            <h3 className="text-xs font-medium text-foreground line-clamp-1 group-hover:text-primary transition-colors">
+            <h3 className="text-sm font-medium text-foreground line-clamp-1">
               {note.title}
             </h3>
             <div className="flex items-center gap-1">
-              {note.favorite && (
-                <div className="w-2 h-2 rounded-full bg-warning flex-shrink-0" />
+              {selectedNoteId === note.id && (
+                <div
+                  className="w-2 h-2 rounded-full flex-shrink-0 bg-[#ffe32e]"
+                  title="Active"
+                />
               )}
               <button
                 onClick={handleFlip}
@@ -115,7 +142,7 @@ export const NoteCard = ({ note, selectedNoteId, onSelect, onFlip, onRename, onD
               </button>
             </div>
           </div>
-          <p className="text-xs text-muted-foreground line-clamp-2 mb-2">{note.preview}</p>
+          <p className="text-sm text-muted-foreground line-clamp-2 mb-2">{note.preview}</p>
           <div className="flex items-center justify-between">
             <div className="flex gap-1.5">
               {note.tags.slice(0, 2).map((tag) => (
@@ -127,22 +154,24 @@ export const NoteCard = ({ note, selectedNoteId, onSelect, onFlip, onRename, onD
                 </span>
               ))}
             </div>
-            <span className="text-xs text-muted-foreground">{note.date}</span>
+            <span className="text-sm text-muted-foreground">{note.date}</span>
           </div>
         </button>
 
             {/* Back of card */}
             <div
               className={cn(
-                "absolute inset-0 z-10 w-full rounded-[4px] border border-warning backface-hidden rotate-y-180 bg-card/90 shadow-md overflow-hidden"
+                "absolute inset-0 z-10 w-full rounded-[4px] border border-warning backface-hidden rotate-y-180 shadow-md overflow-hidden",
+                !displayIsFlipped && "opacity-0 pointer-events-none"
               )}
               style={{
+                backgroundColor: "#18181B",
                 transformStyle: "preserve-3d"
               }}
             >
               <div className="h-full overflow-y-auto p-3">
               <div className="flex items-start justify-between mb-3">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-warning">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                   METADATA
                 </h3>
                 <button
@@ -158,17 +187,17 @@ export const NoteCard = ({ note, selectedNoteId, onSelect, onFlip, onRename, onD
             {/* Details */}
             <div className="space-y-2">
               <div className="space-y-1.5">
-                <div className="flex items-center gap-2 text-xs">
+                <div className="flex items-center gap-2 text-sm">
                   <Calendar className="w-3 h-3 text-muted-foreground" />
                   <span className="text-muted-foreground">Created:</span>
-                  <span className="text-foreground">Jan 15, 2025</span>
+                  <span className="text-foreground">{new Date(note.createdAt).toLocaleDateString()}</span>
                 </div>
-                <div className="flex items-center gap-2 text-xs">
+                <div className="flex items-center gap-2 text-sm">
                   <Star className="w-3 h-3 text-muted-foreground" />
                   <span className="text-muted-foreground">Modified:</span>
                   <span className="text-foreground">{note.date}</span>
                 </div>
-                <div className="flex items-center gap-2 text-xs">
+                <div className="flex items-center gap-2 text-sm">
                   <FileText className="w-3 h-3 text-muted-foreground" />
                   <span className="text-muted-foreground">Type:</span>
                   <span className="text-foreground capitalize">{note.tags[0] || "General"}</span>
@@ -178,54 +207,60 @@ export const NoteCard = ({ note, selectedNoteId, onSelect, onFlip, onRename, onD
 
             {/* Attachments */}
             <div className="space-y-2">
-              <div className="text-xs uppercase tracking-wider text-muted-foreground font-semibold flex items-center gap-1">
+              <div className="text-sm uppercase tracking-wider text-muted-foreground font-semibold flex items-center gap-1">
                 <Paperclip className="w-3 h-3" />
-                Attachments (3)
+                Attachments ({Object.keys(note.attachments || {}).length})
               </div>
               <div className="space-y-1">
-                <div className="flex items-center gap-2 p-1.5 rounded hover:bg-muted/50 transition-colors">
-                  <FileText className="w-3 h-3 text-primary" />
-                  <span className="text-xs text-foreground">document.pdf</span>
-                  <span className="text-xs text-muted-foreground ml-auto">2.4 MB</span>
-                </div>
-                <div className="flex items-center gap-2 p-1.5 rounded hover:bg-muted/50 transition-colors">
-                  <FileText className="w-3 h-3 text-primary" />
-                  <span className="text-xs text-foreground">notes.txt</span>
-                  <span className="text-xs text-muted-foreground ml-auto">12 KB</span>
-                </div>
+                {Object.keys(note.attachments || {}).slice(0, 2).map((filename) => (
+                  <div key={filename} className="flex items-center gap-2 p-1.5 rounded hover:bg-muted/50 transition-colors">
+                    <FileText className="w-3 h-3 text-muted-foreground" />
+                    <span className="text-sm text-foreground truncate flex-1">{filename}</span>
+                  </div>
+                ))}
+                {Object.keys(note.attachments || {}).length === 0 && (
+                  <span className="text-sm text-muted-foreground">No attachments</span>
+                )}
               </div>
             </div>
 
             {/* Photos */}
             <div className="space-y-2">
-              <div className="text-xs uppercase tracking-wider text-muted-foreground font-semibold flex items-center gap-1">
+              <div className="text-sm uppercase tracking-wider text-muted-foreground font-semibold flex items-center gap-1">
                 <ImageIcon className="w-3 h-3" />
-                Photos (2)
+                Photos ({(note.photos || []).length})
               </div>
               <div className="grid grid-cols-2 gap-2">
-                <div className="aspect-video bg-muted rounded border border-border flex items-center justify-center">
-                  <ImageIcon className="w-4 h-4 text-muted-foreground" />
-                </div>
-                <div className="aspect-video bg-muted rounded border border-border flex items-center justify-center">
-                  <ImageIcon className="w-4 h-4 text-muted-foreground" />
-                </div>
+                {(note.photos || []).slice(0, 4).map((photo) => (
+                  <div key={photo.id} className="aspect-video bg-muted rounded border border-border overflow-hidden">
+                    <img src={photo.dataUrl} alt={photo.name} className="w-full h-full object-cover" />
+                  </div>
+                ))}
+                {(note.photos || []).length === 0 && (
+                  <div className="col-span-2 aspect-video bg-muted rounded border border-border flex items-center justify-center">
+                    <ImageIcon className="w-4 h-4 text-muted-foreground" />
+                  </div>
+                )}
               </div>
             </div>
 
               {/* Tags */}
               <div className="space-y-2">
-                <div className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">
+                <div className="text-sm uppercase tracking-wider text-muted-foreground font-semibold">
                   Tags
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                   {note.tags.map((tag) => (
                     <span
                       key={tag}
-                      className="text-xs px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20"
+                      className="text-xs px-2 py-0.5 rounded bg-muted text-muted-foreground"
                     >
                       {tag}
                     </span>
                   ))}
+                  {note.tags.length === 0 && (
+                    <span className="text-sm text-muted-foreground">No tags</span>
+                  )}
                 </div>
               </div>
             </div>
@@ -234,7 +269,7 @@ export const NoteCard = ({ note, selectedNoteId, onSelect, onFlip, onRename, onD
         </div>
       </div>
     </ContextMenuTrigger>
-    <ContextMenuContent className="w-40">
+    <ContextMenuContent className="w-56">
       <ContextMenuItem
         onClick={handleFlip}
         className="gap-2 cursor-pointer"
@@ -242,6 +277,27 @@ export const NoteCard = ({ note, selectedNoteId, onSelect, onFlip, onRename, onD
         <RotateCcw className="w-3 h-3" />
         View metadata
       </ContextMenuItem>
+      <ContextMenuSub>
+        <ContextMenuSubTrigger className="gap-2 cursor-pointer">
+          <Circle className="w-3 h-3" />
+          Change color
+        </ContextMenuSubTrigger>
+        <ContextMenuSubContent className="grid grid-cols-4 gap-1 p-1.5">
+          {CARD_COLORS.map((color) => (
+            <button
+              key={color.name}
+              className={cn(
+                "w-6 h-6 rounded-md border-2 transition-transform hover:scale-110",
+                note.color === color.value ? "border-white" : "border-transparent"
+              )}
+              style={{ backgroundColor: color.value }}
+              onClick={() => onColorChange?.(note.id, color.value)}
+              title={color.name}
+            />
+          ))}
+        </ContextMenuSubContent>
+      </ContextMenuSub>
+      <ContextMenuSeparator />
       <ContextMenuItem
         onClick={() => onDelete?.(note.id)}
         className="gap-2 cursor-pointer text-destructive focus:text-destructive"

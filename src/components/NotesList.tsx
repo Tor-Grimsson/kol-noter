@@ -16,7 +16,7 @@ import { useNotesStore, EditorType } from "@/store/notesStore";
 interface NotesListProps {
   onNoteSelect: (noteId: string, type?: EditorType) => void;
   selectedNoteId?: string;
-  onCardFlip?: (isFlipped: boolean, noteTitle: string) => void;
+  onCardFlip?: (isFlipped: boolean, noteId: string | undefined) => void;
   filterSystemId?: string | "all";
   filterProjectId?: string;
 }
@@ -26,6 +26,10 @@ export const NotesList = ({ onNoteSelect, selectedNoteId, onCardFlip, filterSyst
 
   const handleRename = (id: string, newTitle: string) => {
     updateNote(id, { title: newTitle });
+  };
+
+  const handleColorChange = (id: string, color: string) => {
+    updateNote(id, { color });
   };
 
   const handleDelete = (id: string) => {
@@ -202,6 +206,7 @@ export const NotesList = ({ onNoteSelect, selectedNoteId, onCardFlip, filterSyst
               onFlip={onCardFlip}
               onRename={handleRename}
               onDelete={handleDelete}
+              onColorChange={handleColorChange}
             />
           ))}
           {filteredNotes.length === 0 && (

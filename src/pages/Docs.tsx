@@ -1,7 +1,12 @@
 import { UnifiedSidebar } from "@/components/UnifiedSidebar";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
+import { HierarchyContent } from "@/components/HierarchyContent";
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -52,20 +57,158 @@ const SyntaxExample = ({ title, markdown }: SyntaxExampleProps) => {
   );
 };
 
+const MarkdownContent = () => {
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-semibold mb-2">Markdown Syntax Reference</h1>
+        <p className="text-sm text-muted-foreground">
+          Quick reference for formatting your notes with Markdown
+        </p>
+      </div>
+
+      {/* Headings */}
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold">Headings</h2>
+        <SyntaxExample
+          title="Heading Levels"
+          markdown={`# Heading 1
+## Heading 2
+### Heading 3
+#### Heading 4`}
+        />
+      </section>
+
+      {/* Text Styles */}
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold">Text Styles</h2>
+        <SyntaxExample
+          title="Bold & Italic"
+          markdown={`**bold text** or __bold text__
+
+*italic text* or _italic text_
+
+***bold and italic***`}
+        />
+        <SyntaxExample
+          title="Other Styles"
+          markdown={`~~strikethrough~~
+
+\`inline code\``}
+        />
+      </section>
+
+      {/* Code Blocks */}
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold">Code Blocks</h2>
+        <SyntaxExample
+          title="Fenced Code Block"
+          markdown={`\`\`\`javascript
+function hello() {
+  console.log("Hello, world!");
+}
+\`\`\``}
+        />
+      </section>
+
+      {/* Lists */}
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold">Lists</h2>
+        <SyntaxExample
+          title="Unordered List"
+          markdown={`- First item
+- Second item
+- Third item
+  - Nested item
+  - Another nested`}
+        />
+        <SyntaxExample
+          title="Ordered List"
+          markdown={`1. First item
+2. Second item
+3. Third item`}
+        />
+        <SyntaxExample
+          title="Task List"
+          markdown={`- [ ] Unchecked task
+- [x] Completed task
+- [ ] Another task`}
+        />
+      </section>
+
+      {/* Links & Images */}
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold">Links & Images</h2>
+        <SyntaxExample
+          title="Links"
+          markdown={`[Link text](https://example.com)
+
+[Link with title](https://example.com "Hover title")`}
+        />
+        <SyntaxExample
+          title="Images"
+          markdown={`![Alt text](https://via.placeholder.com/150)`}
+        />
+      </section>
+
+      {/* Blockquotes */}
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold">Blockquotes</h2>
+        <SyntaxExample
+          title="Quote"
+          markdown={`> This is a blockquote.
+> It can span multiple lines.
+>
+> And have multiple paragraphs.`}
+        />
+      </section>
+
+      {/* Horizontal Rule */}
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold">Horizontal Rule</h2>
+        <SyntaxExample
+          title="Divider"
+          markdown={`Content above
+
+---
+
+Content below`}
+        />
+      </section>
+
+      {/* Tables */}
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold">Tables</h2>
+        <SyntaxExample
+          title="Table"
+          markdown={`| Header 1 | Header 2 | Header 3 |
+|----------|----------|----------|
+| Cell 1   | Cell 2   | Cell 3   |
+| Cell 4   | Cell 5   | Cell 6   |`}
+        />
+      </section>
+    </div>
+  );
+};
+
 const Docs = () => {
+  const navigate = useNavigate();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
-  const breadcrumbItems = [
-    { label: "Docs" }
-  ];
+  const breadcrumbItems = [{ label: "Docs" }];
+
+  const handleExplorerSelect = () => {
+    navigate("/");
+  };
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background">
       <UnifiedSidebar
         collapsed={sidebarCollapsed}
-        onNoteSelect={() => {}}
+        onNoteSelect={handleExplorerSelect}
         selectedNoteId={undefined}
-        onSystemProjectSelect={() => {}}
+        onSystemProjectSelect={handleExplorerSelect}
+        onHierarchySelect={handleExplorerSelect}
       />
 
       <div className="flex-1 bg-background flex flex-col">
@@ -74,138 +217,26 @@ const Docs = () => {
           <div className="flex-1 overflow-x-auto overflow-y-hidden">
             <Breadcrumbs items={breadcrumbItems} />
           </div>
+          <Button variant="ghost" size="icon" onClick={() => navigate("/")}>
+            <X className="w-4 h-4" />
+          </Button>
         </div>
 
         {/* Content */}
         <div className="flex-1 overflow-auto p-6">
-          <div className="max-w-4xl mx-auto space-y-6">
-            <div>
-              <h1 className="text-2xl font-semibold mb-2">Markdown Syntax Reference</h1>
-              <p className="text-sm text-muted-foreground">
-                Quick reference for formatting your notes with Markdown
-              </p>
-            </div>
-
-            {/* Headings */}
-            <section className="space-y-3">
-              <h2 className="text-lg font-semibold">Headings</h2>
-              <SyntaxExample
-                title="Heading Levels"
-                markdown={`# Heading 1
-## Heading 2
-### Heading 3
-#### Heading 4`}
-              />
-            </section>
-
-            {/* Text Styles */}
-            <section className="space-y-3">
-              <h2 className="text-lg font-semibold">Text Styles</h2>
-              <SyntaxExample
-                title="Bold & Italic"
-                markdown={`**bold text** or __bold text__
-
-*italic text* or _italic text_
-
-***bold and italic***`}
-              />
-              <SyntaxExample
-                title="Other Styles"
-                markdown={`~~strikethrough~~
-
-\`inline code\``}
-              />
-            </section>
-
-            {/* Code Blocks */}
-            <section className="space-y-3">
-              <h2 className="text-lg font-semibold">Code Blocks</h2>
-              <SyntaxExample
-                title="Fenced Code Block"
-                markdown={`\`\`\`javascript
-function hello() {
-  console.log("Hello, world!");
-}
-\`\`\``}
-              />
-            </section>
-
-            {/* Lists */}
-            <section className="space-y-3">
-              <h2 className="text-lg font-semibold">Lists</h2>
-              <SyntaxExample
-                title="Unordered List"
-                markdown={`- First item
-- Second item
-- Third item
-  - Nested item
-  - Another nested`}
-              />
-              <SyntaxExample
-                title="Ordered List"
-                markdown={`1. First item
-2. Second item
-3. Third item`}
-              />
-              <SyntaxExample
-                title="Task List"
-                markdown={`- [ ] Unchecked task
-- [x] Completed task
-- [ ] Another task`}
-              />
-            </section>
-
-            {/* Links & Images */}
-            <section className="space-y-3">
-              <h2 className="text-lg font-semibold">Links & Images</h2>
-              <SyntaxExample
-                title="Links"
-                markdown={`[Link text](https://example.com)
-
-[Link with title](https://example.com "Hover title")`}
-              />
-              <SyntaxExample
-                title="Images"
-                markdown={`![Alt text](https://via.placeholder.com/150)`}
-              />
-            </section>
-
-            {/* Blockquotes */}
-            <section className="space-y-3">
-              <h2 className="text-lg font-semibold">Blockquotes</h2>
-              <SyntaxExample
-                title="Quote"
-                markdown={`> This is a blockquote.
-> It can span multiple lines.
->
-> And have multiple paragraphs.`}
-              />
-            </section>
-
-            {/* Horizontal Rule */}
-            <section className="space-y-3">
-              <h2 className="text-lg font-semibold">Horizontal Rule</h2>
-              <SyntaxExample
-                title="Divider"
-                markdown={`Content above
-
----
-
-Content below`}
-              />
-            </section>
-
-            {/* Tables */}
-            <section className="space-y-3">
-              <h2 className="text-lg font-semibold">Tables</h2>
-              <SyntaxExample
-                title="Table"
-                markdown={`| Header 1 | Header 2 | Header 3 |
-|----------|----------|----------|
-| Cell 1   | Cell 2   | Cell 3   |
-| Cell 4   | Cell 5   | Cell 6   |`}
-              />
-            </section>
+          <div className="max-w-5xl mx-auto">
+            <Tabs defaultValue="markdown">
+              <TabsList className="mb-6">
+                <TabsTrigger value="markdown">Markdown Syntax</TabsTrigger>
+                <TabsTrigger value="hierarchy">Hierarchy</TabsTrigger>
+              </TabsList>
+              <TabsContent value="markdown">
+                <MarkdownContent />
+              </TabsContent>
+              <TabsContent value="hierarchy">
+                <HierarchyContent />
+              </TabsContent>
+            </Tabs>
           </div>
         </div>
       </div>

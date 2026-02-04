@@ -1,4 +1,5 @@
 import { Trash2, RotateCcw, X } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { UnifiedSidebar } from "@/components/UnifiedSidebar";
@@ -16,11 +17,20 @@ import {
 } from "@/components/ui/alert-dialog";
 
 const Trash = () => {
+  const navigate = useNavigate();
   const { trash, restoreNote, permanentlyDeleteNote, emptyTrash } = useNotesStore();
+
+  const handleExplorerSelect = () => {
+    navigate("/");
+  };
 
   return (
     <div className="flex h-screen bg-background">
-      <UnifiedSidebar onNoteSelect={() => {}} />
+      <UnifiedSidebar
+        onNoteSelect={handleExplorerSelect}
+        onSystemProjectSelect={handleExplorerSelect}
+        onHierarchySelect={handleExplorerSelect}
+      />
 
       <div className="flex-1 flex flex-col">
         <div className="border-b border-border p-4 flex items-center justify-between">
@@ -31,8 +41,9 @@ const Trash = () => {
               {trash.length} {trash.length === 1 ? "note" : "notes"}
             </span>
           </div>
-          {trash.length > 0 && (
-            <AlertDialog>
+          <div className="flex items-center gap-2">
+            {trash.length > 0 && (
+              <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="destructive" size="sm">
                   Empty Trash
@@ -53,7 +64,11 @@ const Trash = () => {
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
-          )}
+            )}
+            <Button variant="ghost" size="icon" onClick={() => navigate("/")}>
+              <X className="w-4 h-4" />
+            </Button>
+          </div>
         </div>
 
         <ScrollArea className="flex-1">

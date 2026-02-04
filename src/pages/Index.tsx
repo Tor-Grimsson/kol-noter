@@ -15,13 +15,12 @@ import { useNotesStore, Block, VisualNode, EditorType } from "@/store/notesStore
 const Index = () => {
   const { systems, notes, getNote, updateNoteContent, updateNote, addNote, deleteNote, saveAttachment } = useNotesStore();
 
-  const [selectedNoteId, setSelectedNoteId] = useState<string | undefined>("1");
+  const [selectedNoteId, setSelectedNoteId] = useState<string | undefined>(undefined);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [notesVisible, setNotesVisible] = useState(true);
   const [focusMode, setFocusMode] = useState(false);
   const [invertColors, setInvertColors] = useState(false);
   const [showNoteDetails, setShowNoteDetails] = useState(false);
-  const [detailsNoteTitle, setDetailsNoteTitle] = useState("");
   const [editorType, setEditorType] = useState<EditorType>("modular");
   const [selectedSystemId, setSelectedSystemId] = useState<string | "all">("system-1");
   const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>("project-1");
@@ -93,6 +92,7 @@ const Index = () => {
   const handleSystemProjectSelect = (systemId: string | "all", projectId?: string) => {
     setSelectedSystemId(systemId);
     setSelectedProjectId(projectId);
+    setSelectedNoteId(undefined);
   };
 
   const handleHierarchySelect = (info: HierarchySelectInfo) => {
@@ -113,6 +113,7 @@ const Index = () => {
       setViewMode('overview');
       setOverviewTarget(info);
       setShowNoteDetails(false);
+      setSelectedNoteId(undefined);
     } else {
       // For note, page, and section levels, show editor
       setViewMode('editor');
@@ -158,42 +159,12 @@ const Index = () => {
     return items;
   }, [selectedSystemId, selectedProjectId, activeTabId, openTabs]);
 
-  const handleDetailsRename = (newTitle: string) => {
-    if (selectedNoteId) {
-      updateNote(selectedNoteId, { title: newTitle });
-      setDetailsNoteTitle(newTitle);
-      // Also update the tab title if open
-      setOpenTabs(openTabs.map(tab =>
-        tab.id === selectedNoteId ? { ...tab, title: newTitle } : tab
-      ));
-    }
-  };
-
-  const handleDetailsDelete = () => {
-    if (selectedNoteId) {
-      deleteNote(selectedNoteId);
-      // Close the tab if open
-      handleTabClose(selectedNoteId);
-      // Exit details view
-      setShowNoteDetails(false);
-      // Select another note if available
-      const remainingNotes = notes.filter(n => n.id !== selectedNoteId);
-      if (remainingNotes.length > 0) {
-        setSelectedNoteId(remainingNotes[0].id);
-      } else {
-        setSelectedNoteId(undefined);
-      }
-    }
-  };
-
   const renderEditor = () => {
-    if (showNoteDetails) {
+    if (showNoteDetails && selectedNoteId) {
       return (
         <NoteDetailsView
-          noteId={selectedNoteId || ""}
-          noteTitle={detailsNoteTitle}
-          onRename={handleDetailsRename}
-          onDelete={handleDetailsDelete}
+          noteId={selectedNoteId}
+          onClose={() => setShowNoteDetails(false)}
         />
       );
     }
@@ -375,9 +346,11 @@ const Index = () => {
           selectedNoteId={selectedNoteId}
           filterSystemId={selectedSystemId}
           filterProjectId={selectedProjectId}
-          onCardFlip={(isFlipped, noteTitle) => {
+          onCardFlip={(isFlipped, noteId) => {
             setShowNoteDetails(isFlipped);
-            setDetailsNoteTitle(noteTitle);
+            if (noteId) {
+              setSelectedNoteId(noteId);
+            }
             setViewMode('editor');
             setOverviewTarget(null);
           }}

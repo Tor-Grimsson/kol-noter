@@ -9,11 +9,19 @@ import {
   Search,
   X,
   BookOpen,
-  TreePine,
   Trash2,
-  Layers,
   Settings,
-  FoldVertical
+  FoldVertical,
+  Pencil,
+  Circle,
+  Plus,
+  Star,
+  Heart,
+  Code,
+  Book,
+  Briefcase,
+  Home,
+  Music
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -28,8 +36,18 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { UserProfile } from "./UserProfile";
-import { useNotesStore } from "@/store/notesStore";
+import { useNotesStore, EXPLORER_COLORS, EXPLORER_ICONS } from "@/store/notesStore";
 
 interface Section {
   id: string;
@@ -92,7 +110,22 @@ export const UnifiedSidebar = ({
 }: UnifiedSidebarProps) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { trash, systems: storeSystems, notes: storeNotes } = useNotesStore();
+  const {
+    trash,
+    systems: storeSystems,
+    notes: storeNotes,
+    addSystem,
+    updateSystem,
+    deleteSystem,
+    addProject,
+    updateProject,
+    deleteProject,
+    addNote,
+    updateNote,
+    deleteNote,
+    updateSystemColorIcon,
+    updateProjectColorIcon,
+  } = useNotesStore();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedSystemId, setSelectedSystemId] = useState<string | "all">("all");
   const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>(undefined);
@@ -103,29 +136,63 @@ export const UnifiedSidebar = ({
   const [isResizing, setIsResizing] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [searchExpanded, setSearchExpanded] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState("");
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const editInputRef = useRef<HTMLInputElement>(null);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const MIN_WIDTH = 56; // Icon-only width
   const MAX_WIDTH = 480;
   const COLLAPSED_THRESHOLD = 100; // If dragged below this, treat as collapsed
 
+  // Icon mapping for explorer items
+  const getIconComponent = (iconName?: string, className?: string) => {
+    switch (iconName) {
+      case "star": return <Star className={className} />;
+      case "heart": return <Heart className={className} />;
+      case "code": return <Code className={className} />;
+      case "book": return <Book className={className} />;
+      case "briefcase": return <Briefcase className={className} />;
+      case "home": return <Home className={className} />;
+      case "music": return <Music className={className} />;
+      case "folder":
+      default: return <Folder className={className} />;
+    }
+  };
+
+  // Focus edit input when editing
+  useEffect(() => {
+    if (editingId && editInputRef.current) {
+      editInputRef.current.focus();
+      editInputRef.current.select();
+    }
+  }, [editingId]);
+
   // Build hierarchical data from store (System > Project > Notes > Pages > Sections)
   // For now, pages and sections are placeholders - can be extended later
-  const systems: System[] = storeSystems.map(storeSystem => ({
+  const systemsWithMeta = storeSystems.map(storeSystem => ({
     id: storeSystem.id,
     name: storeSystem.name,
+    color: storeSystem.color,
+    icon: storeSystem.icon,
     projects: storeSystem.projects.map(storeProject => ({
       id: storeProject.id,
       name: storeProject.name,
+      color: storeProject.color,
+      icon: storeProject.icon,
       notes: storeNotes
         .filter(n => n.systemId === storeSystem.id && n.projectId === storeProject.id)
         .map(note => ({
           id: note.id,
           title: note.title,
+          color: note.color,
           pages: [], // Pages/sections can be added later if needed
         })),
     })),
   }));
+
+  // Keep the old systems variable for compatibility
+  const systems: System[] = systemsWithMeta;
 
   const allNotes = systems.flatMap(s => 
     s.projects.flatMap(p => 
@@ -259,166 +326,404 @@ export const UnifiedSidebar = ({
     );
   };
 
-  const renderNote = (note: Note, level: number, parentIds: { systemId: string; projectId: string }) => {
+  const renderNote = (note: typeof systemsWithMeta[0]['projects'][0]['notes'][0], level: number, parentIds: { systemId: string; projectId: string }) => {
     const isExpanded = expandedItems.has(note.id);
     const hasChildren = note.pages.length > 0;
+    const isEditing = editingId === note.id;
+
+    const handleRename = () => {
+      if (editingName.trim() && editingName !== note.title) {
+        updateNote(note.id, { title: editingName.trim() });
+      }
+      setEditingId(null);
+      setEditingName("");
+    };
 
     return (
-      <div key={note.id} className="w-full">
-        <div
-          className={cn(
-            "w-full flex items-center gap-1 py-1 px-2 rounded text-left transition-colors text-sm",
-            "hover:bg-sidebar-item",
-            selectedNoteId === note.id && "bg-sidebar-active text-primary"
-          )}
-          style={{ paddingLeft: `${level * 0.75}rem` }}
-        >
-          {/* Chevron - expand/collapse only (if has children) */}
-          {hasChildren ? (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleItem(note.id);
-              }}
-              className="p-0.5 hover:bg-sidebar-item/50 rounded shrink-0"
-            >
-              {isExpanded ? (
-                <ChevronDown className="w-4 h-4 text-muted-foreground" />
-              ) : (
-                <ChevronRight className="w-4 h-4 text-muted-foreground" />
+      <ContextMenu key={note.id}>
+        <ContextMenuTrigger asChild>
+          <div className="w-full">
+            <div
+              className={cn(
+                "w-full flex items-center gap-1 py-1 px-2 rounded text-left transition-colors text-sm",
+                "hover:bg-sidebar-item",
+                selectedNoteId === note.id && "bg-sidebar-active text-primary"
               )}
-            </button>
-          ) : (
-            <span className="w-5" /> // Spacer for alignment
-          )}
-          {/* Rest of item - open note */}
-          <button
-            onClick={() => {
-              onNoteSelect(note.id);
-              onHierarchySelect?.({
-                level: 'note',
-                id: note.id,
-                parentIds
-              });
-            }}
-            className="flex-1 flex items-center gap-2 text-left"
-          >
-            <FileText className="w-4 h-4 text-muted-foreground shrink-0" />
-            <span className="line-clamp-1">{note.title} <span className="opacity-50">[Note]</span></span>
-          </button>
-        </div>
-        {isExpanded && hasChildren && (
-          <div className="mt-0.5 space-y-0.5">
-            {note.pages.map(p => renderPage(p, level + 1, { ...parentIds, noteId: note.id }))}
+              style={{ paddingLeft: `${level * 0.75}rem` }}
+            >
+              {/* Chevron - expand/collapse only (if has children) */}
+              {hasChildren ? (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleItem(note.id);
+                  }}
+                  className="p-0.5 hover:bg-sidebar-item/50 rounded shrink-0"
+                >
+                  {isExpanded ? (
+                    <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                  ) : (
+                    <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                  )}
+                </button>
+              ) : (
+                <span className="w-5" /> // Spacer for alignment
+              )}
+              {/* Rest of item - open note */}
+              <button
+                onClick={() => {
+                  onNoteSelect(note.id);
+                  onHierarchySelect?.({
+                    level: 'note',
+                    id: note.id,
+                    parentIds
+                  });
+                }}
+                className="flex-1 flex items-center gap-2 text-left"
+              >
+                <FileText className="w-4 h-4 shrink-0" style={{ color: note.color }} />
+                {isEditing ? (
+                  <Input
+                    ref={editInputRef}
+                    value={editingName}
+                    onChange={(e) => setEditingName(e.target.value)}
+                    onBlur={handleRename}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleRename();
+                      if (e.key === 'Escape') {
+                        setEditingId(null);
+                        setEditingName("");
+                      }
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="h-5 px-1 text-sm"
+                  />
+                ) : (
+                  <span className="line-clamp-1" style={{ color: note.color }}>
+                    {note.title} <span className="opacity-50">[Note]</span>
+                  </span>
+                )}
+              </button>
+            </div>
+            {isExpanded && hasChildren && (
+              <div className="mt-0.5 space-y-0.5">
+                {note.pages.map(p => renderPage(p, level + 1, { ...parentIds, noteId: note.id }))}
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent>
+          <ContextMenuItem onClick={() => {
+            setEditingId(note.id);
+            setEditingName(note.title);
+          }}>
+            <Pencil className="w-4 h-4 mr-2" /> Rename
+          </ContextMenuItem>
+          <ContextMenuSub>
+            <ContextMenuSubTrigger>
+              <Circle className="w-4 h-4 mr-2" /> Change Color
+            </ContextMenuSubTrigger>
+            <ContextMenuSubContent className="grid grid-cols-4 gap-1 p-1.5">
+              {EXPLORER_COLORS.map(c => (
+                <button
+                  key={c.name}
+                  className="w-6 h-6 rounded border border-border hover:scale-110 transition-transform"
+                  style={{ backgroundColor: c.value }}
+                  onClick={() => updateNote(note.id, { color: c.value })}
+                />
+              ))}
+              <button
+                className="w-6 h-6 rounded border border-border hover:scale-110 transition-transform flex items-center justify-center text-muted-foreground"
+                onClick={() => updateNote(note.id, { color: undefined })}
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </ContextMenuSubContent>
+          </ContextMenuSub>
+          <ContextMenuSeparator />
+          <ContextMenuItem className="text-destructive" onClick={() => deleteNote(note.id)}>
+            <Trash2 className="w-4 h-4 mr-2" /> Delete
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
     );
   };
 
-  const renderProject = (project: Project, level: number, systemId: string) => {
+  const renderProject = (project: typeof systemsWithMeta[0]['projects'][0], level: number, systemId: string) => {
     const isExpanded = expandedItems.has(project.id);
     const isSelected = selectedProjectId === project.id;
+    const isEditing = editingId === project.id;
+
+    const handleRename = () => {
+      if (editingName.trim() && editingName !== project.name) {
+        updateProject(systemId, project.id, editingName.trim());
+      }
+      setEditingId(null);
+      setEditingName("");
+    };
 
     return (
-      <div key={project.id} className="w-full">
-        <div
-          className={cn(
-            "w-full flex items-center gap-1 py-1 px-2 rounded text-left transition-colors text-sm hover:bg-sidebar-item",
-            isSelected && "bg-sidebar-active"
-          )}
-          style={{ paddingLeft: `${level * 0.75}rem` }}
-        >
-          {/* Chevron - expand/collapse only */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              toggleItem(project.id);
-            }}
-            className="p-0.5 hover:bg-sidebar-item/50 rounded shrink-0"
-          >
-            {isExpanded ? (
-              <ChevronDown className="w-4 h-4 text-muted-foreground" />
-            ) : (
-              <ChevronRight className="w-4 h-4 text-muted-foreground" />
+      <ContextMenu key={project.id}>
+        <ContextMenuTrigger asChild>
+          <div className="w-full">
+            <div
+              className={cn(
+                "w-full flex items-center gap-1 py-1 px-2 rounded text-left transition-colors text-sm hover:bg-sidebar-item",
+                isSelected && "bg-sidebar-active"
+              )}
+              style={{ paddingLeft: `${level * 0.75}rem` }}
+            >
+              {/* Chevron - expand/collapse only */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleItem(project.id);
+                }}
+                className="p-0.5 hover:bg-sidebar-item/50 rounded shrink-0"
+              >
+                {isExpanded ? (
+                  <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                )}
+              </button>
+              {/* Rest of item - open detail */}
+              <button
+                onClick={() => {
+                  setSelectedProjectId(project.id);
+                  setSelectedSystemId(systemId);
+                  onSystemProjectSelect?.(systemId, project.id);
+                  onHierarchySelect?.({
+                    level: 'project',
+                    id: project.id,
+                    parentIds: { systemId }
+                  });
+                }}
+                className="flex-1 flex items-center gap-2 text-left"
+              >
+                {getIconComponent(project.icon, `w-4 h-4 shrink-0 ${!project.color ? 'text-muted-foreground' : ''}`)}
+                {isEditing ? (
+                  <Input
+                    ref={editInputRef}
+                    value={editingName}
+                    onChange={(e) => setEditingName(e.target.value)}
+                    onBlur={handleRename}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleRename();
+                      if (e.key === 'Escape') {
+                        setEditingId(null);
+                        setEditingName("");
+                      }
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="h-5 px-1 text-sm"
+                  />
+                ) : (
+                  <span className="line-clamp-1" style={{ color: project.color }}>
+                    {project.name} <span className="opacity-50">[Project]</span>
+                  </span>
+                )}
+              </button>
+            </div>
+            {isExpanded && (
+              <div className="mt-0.5 space-y-0.5">
+                {project.notes.map(n => renderNote(n, level + 1, { systemId, projectId: project.id }))}
+              </div>
             )}
-          </button>
-          {/* Rest of item - open detail */}
-          <button
-            onClick={() => {
-              setSelectedProjectId(project.id);
-              setSelectedSystemId(systemId);
-              onSystemProjectSelect?.(systemId, project.id);
-              onHierarchySelect?.({
-                level: 'project',
-                id: project.id,
-                parentIds: { systemId }
-              });
-            }}
-            className="flex-1 flex items-center gap-2 text-left"
-          >
-            <Folder className="w-4 h-4 text-muted-foreground shrink-0" />
-            <span className="line-clamp-1">{project.name} <span className="opacity-50">[Project]</span></span>
-          </button>
-        </div>
-        {isExpanded && (
-          <div className="mt-0.5 space-y-0.5">
-            {project.notes.map(n => renderNote(n, level + 1, { systemId, projectId: project.id }))}
           </div>
-        )}
-      </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent>
+          <ContextMenuItem onClick={() => addNote(systemId, project.id, "modular")}>
+            <FileText className="w-4 h-4 mr-2" /> Create Note
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem onClick={() => {
+            setEditingId(project.id);
+            setEditingName(project.name);
+          }}>
+            <Pencil className="w-4 h-4 mr-2" /> Rename
+          </ContextMenuItem>
+          <ContextMenuSub>
+            <ContextMenuSubTrigger>
+              <Circle className="w-4 h-4 mr-2" /> Change Color
+            </ContextMenuSubTrigger>
+            <ContextMenuSubContent className="grid grid-cols-4 gap-1 p-1.5">
+              {EXPLORER_COLORS.map(c => (
+                <button
+                  key={c.name}
+                  className="w-6 h-6 rounded border border-border hover:scale-110 transition-transform"
+                  style={{ backgroundColor: c.value }}
+                  onClick={() => updateProjectColorIcon(systemId, project.id, c.value, undefined)}
+                />
+              ))}
+              <button
+                className="w-6 h-6 rounded border border-border hover:scale-110 transition-transform flex items-center justify-center text-muted-foreground"
+                onClick={() => updateProjectColorIcon(systemId, project.id, undefined, undefined)}
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </ContextMenuSubContent>
+          </ContextMenuSub>
+          <ContextMenuSub>
+            <ContextMenuSubTrigger>
+              <Folder className="w-4 h-4 mr-2" /> Change Icon
+            </ContextMenuSubTrigger>
+            <ContextMenuSubContent className="grid grid-cols-4 gap-1 p-1.5">
+              {EXPLORER_ICONS.map(i => (
+                <button
+                  key={i}
+                  className="w-6 h-6 rounded border border-border hover:scale-110 transition-transform flex items-center justify-center"
+                  onClick={() => updateProjectColorIcon(systemId, project.id, undefined, i)}
+                >
+                  {getIconComponent(i, "w-4 h-4")}
+                </button>
+              ))}
+            </ContextMenuSubContent>
+          </ContextMenuSub>
+          <ContextMenuSeparator />
+          <ContextMenuItem className="text-destructive" onClick={() => deleteProject(systemId, project.id)}>
+            <Trash2 className="w-4 h-4 mr-2" /> Delete
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
     );
   };
 
-  const renderSystem = (system: System) => {
+  const renderSystem = (system: typeof systemsWithMeta[0]) => {
     const isExpanded = expandedItems.has(system.id);
     const isSelected = selectedSystemId === system.id && !selectedProjectId;
+    const isEditing = editingId === system.id;
+
+    const handleRename = () => {
+      if (editingName.trim() && editingName !== system.name) {
+        updateSystem(system.id, editingName.trim());
+      }
+      setEditingId(null);
+      setEditingName("");
+    };
 
     return (
-      <div key={system.id} className="w-full">
-        <div
-          className={cn(
-            "w-full flex items-center gap-1 py-1.5 px-2 rounded text-left transition-colors text-sm hover:bg-sidebar-item",
-            isSelected && "bg-sidebar-active"
-          )}
-        >
-          {/* Chevron - expand/collapse only */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              toggleItem(system.id);
-            }}
-            className="p-0.5 hover:bg-sidebar-item/50 rounded shrink-0"
-          >
-            {isExpanded ? (
-              <ChevronDown className="w-4 h-4 text-muted-foreground" />
-            ) : (
-              <ChevronRight className="w-4 h-4 text-muted-foreground" />
+      <ContextMenu key={system.id}>
+        <ContextMenuTrigger asChild>
+          <div className="w-full">
+            <div
+              className={cn(
+                "w-full flex items-center gap-1 py-1.5 px-2 rounded text-left transition-colors text-sm hover:bg-sidebar-item",
+                isSelected && "bg-sidebar-active"
+              )}
+            >
+              {/* Chevron - expand/collapse only */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleItem(system.id);
+                }}
+                className="p-0.5 hover:bg-sidebar-item/50 rounded shrink-0"
+              >
+                {isExpanded ? (
+                  <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                )}
+              </button>
+              {/* Rest of item - open detail */}
+              <button
+                onClick={() => {
+                  setSelectedSystemId(system.id);
+                  setSelectedProjectId(undefined);
+                  onSystemProjectSelect?.(system.id);
+                  onHierarchySelect?.({
+                    level: 'system',
+                    id: system.id
+                  });
+                }}
+                className="flex-1 flex items-center gap-2 text-left"
+              >
+                <Network className="w-4 h-4 shrink-0" style={{ color: system.color }} />
+                {isEditing ? (
+                  <Input
+                    ref={editInputRef}
+                    value={editingName}
+                    onChange={(e) => setEditingName(e.target.value)}
+                    onBlur={handleRename}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleRename();
+                      if (e.key === 'Escape') {
+                        setEditingId(null);
+                        setEditingName("");
+                      }
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="h-5 px-1 text-sm"
+                  />
+                ) : (
+                  <span className="line-clamp-1" style={{ color: system.color }}>
+                    {system.name} <span className="opacity-50">[System]</span>
+                  </span>
+                )}
+              </button>
+            </div>
+            {isExpanded && (
+              <div className="mt-0.5 space-y-0.5">
+                {system.projects.map(p => renderProject(p, 1, system.id))}
+              </div>
             )}
-          </button>
-          {/* Rest of item - open detail */}
-          <button
-            onClick={() => {
-              setSelectedSystemId(system.id);
-              setSelectedProjectId(undefined);
-              onSystemProjectSelect?.(system.id);
-              onHierarchySelect?.({
-                level: 'system',
-                id: system.id
-              });
-            }}
-            className="flex-1 flex items-center gap-2 text-left"
-          >
-            <Network className="w-4 h-4 text-muted-foreground shrink-0" />
-            <span className="line-clamp-1">{system.name} <span className="opacity-50">[System]</span></span>
-          </button>
-        </div>
-        {isExpanded && (
-          <div className="mt-0.5 space-y-0.5">
-            {system.projects.map(p => renderProject(p, 1, system.id))}
           </div>
-        )}
-      </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent>
+          <ContextMenuItem onClick={() => addProject(system.id, "New Project")}>
+            <Folder className="w-4 h-4 mr-2" /> Create Project
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem onClick={() => {
+            setEditingId(system.id);
+            setEditingName(system.name);
+          }}>
+            <Pencil className="w-4 h-4 mr-2" /> Rename
+          </ContextMenuItem>
+          <ContextMenuSub>
+            <ContextMenuSubTrigger>
+              <Circle className="w-4 h-4 mr-2" /> Change Color
+            </ContextMenuSubTrigger>
+            <ContextMenuSubContent className="grid grid-cols-4 gap-1 p-1.5">
+              {EXPLORER_COLORS.map(c => (
+                <button
+                  key={c.name}
+                  className="w-6 h-6 rounded border border-border hover:scale-110 transition-transform"
+                  style={{ backgroundColor: c.value }}
+                  onClick={() => updateSystemColorIcon(system.id, c.value, undefined)}
+                />
+              ))}
+              <button
+                className="w-6 h-6 rounded border border-border hover:scale-110 transition-transform flex items-center justify-center text-muted-foreground"
+                onClick={() => updateSystemColorIcon(system.id, undefined, undefined)}
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </ContextMenuSubContent>
+          </ContextMenuSub>
+          <ContextMenuSub>
+            <ContextMenuSubTrigger>
+              <Network className="w-4 h-4 mr-2" /> Change Icon
+            </ContextMenuSubTrigger>
+            <ContextMenuSubContent className="grid grid-cols-4 gap-1 p-1.5">
+              {EXPLORER_ICONS.map(i => (
+                <button
+                  key={i}
+                  className="w-6 h-6 rounded border border-border hover:scale-110 transition-transform flex items-center justify-center"
+                  onClick={() => updateSystemColorIcon(system.id, undefined, i)}
+                >
+                  {getIconComponent(i, "w-4 h-4")}
+                </button>
+              ))}
+            </ContextMenuSubContent>
+          </ContextMenuSub>
+          <ContextMenuSeparator />
+          <ContextMenuItem className="text-destructive" onClick={() => deleteSystem(system.id)}>
+            <Trash2 className="w-4 h-4 mr-2" /> Delete
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
     );
   };
 
@@ -542,58 +847,56 @@ export const UnifiedSidebar = ({
       <ScrollArea className="flex-1 px-2 py-2">
         <div className="space-y-1">
           {/* [Root] Option with Pi icon */}
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => {
-                setSelectedSystemId("all");
-                setSelectedProjectId(undefined);
-                onSystemProjectSelect?.("all");
-                onHierarchySelect?.({ level: 'root' });
-              }}
-              className={cn(
-                "flex-1 flex items-center gap-2 py-1.5 px-2 rounded text-left transition-colors text-sm hover:bg-sidebar-item",
-                selectedSystemId === "all" && !selectedProjectId && "bg-sidebar-active"
-              )}
-            >
-              <span className="w-4 h-4 text-muted-foreground shrink-0 flex items-center justify-center font-medium">π</span>
-              <span className="line-clamp-1 opacity-50">[Root]</span>
-            </button>
-            <Tooltip>
-              <TooltipTrigger asChild>
+          <ContextMenu>
+            <ContextMenuTrigger asChild>
+              <div className="flex items-center gap-1">
                 <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    collapseAll();
+                  onClick={() => {
+                    setSelectedSystemId("all");
+                    setSelectedProjectId(undefined);
+                    onSystemProjectSelect?.("all");
+                    onHierarchySelect?.({ level: 'root' });
                   }}
-                  className="p-1.5 rounded hover:bg-sidebar-item transition-colors"
-                  title="Collapse all"
+                  className={cn(
+                    "flex-1 flex items-center gap-2 py-1.5 px-2 rounded text-left transition-colors text-sm hover:bg-sidebar-item",
+                    selectedSystemId === "all" && !selectedProjectId && "bg-sidebar-active"
+                  )}
                 >
-                  <FoldVertical className="w-4 h-4 text-muted-foreground" />
+                  <span className="w-4 h-4 text-muted-foreground shrink-0 flex items-center justify-center font-medium">π</span>
+                  <span className="line-clamp-1 opacity-50">[Root]</span>
                 </button>
-              </TooltipTrigger>
-              <TooltipContent side="right">
-                <p className="text-sm">Collapse all</p>
-              </TooltipContent>
-            </Tooltip>
-          </div>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        collapseAll();
+                      }}
+                      className="p-1.5 rounded hover:bg-sidebar-item transition-colors"
+                      title="Collapse all"
+                    >
+                      <FoldVertical className="w-4 h-4 text-muted-foreground" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="right">
+                    <p className="text-sm">Collapse all</p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+            </ContextMenuTrigger>
+            <ContextMenuContent>
+              <ContextMenuItem onClick={() => addSystem("New System")}>
+                <Network className="w-4 h-4 mr-2" /> Create System
+              </ContextMenuItem>
+            </ContextMenuContent>
+          </ContextMenu>
 
-          {systems.map(renderSystem)}
+          {systemsWithMeta.map(renderSystem)}
         </div>
       </ScrollArea>
 
-      {/* Macro, Docs and Hierarchy */}
+      {/* Docs and Hierarchy */}
       <div className="p-2 border-t border-sidebar-border space-y-1">
-        <Button
-          variant="ghost"
-          className={cn(
-            "w-full flex items-center justify-start gap-2 py-1.5 px-2 h-auto text-sm",
-            location.pathname === "/projects" && "bg-sidebar-active"
-          )}
-          onClick={() => navigate("/projects")}
-        >
-          <Layers className="w-4 h-4 text-muted-foreground shrink-0" />
-          <span className="truncate">Macro</span>
-        </Button>
         <Button
           variant="ghost"
           className={cn(
@@ -604,17 +907,6 @@ export const UnifiedSidebar = ({
         >
           <BookOpen className="w-4 h-4 text-muted-foreground shrink-0" />
           <span className="truncate">Docs</span>
-        </Button>
-        <Button
-          variant="ghost"
-          className={cn(
-            "w-full flex items-center justify-start gap-2 py-1.5 px-2 h-auto text-sm",
-            location.pathname === "/hierarchy" && "bg-sidebar-active"
-          )}
-          onClick={() => navigate("/hierarchy")}
-        >
-          <TreePine className="w-4 h-4 text-muted-foreground shrink-0" />
-          <span className="truncate">Hierarchy</span>
         </Button>
       </div>
 

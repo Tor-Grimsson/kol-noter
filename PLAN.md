@@ -217,12 +217,12 @@ The small flipped card should also show real data:
 
 ## Implementation Order
 
-1. **Store updates** - Add data model and methods
-2. **Auto-extraction logic** - Implement tag/link extraction
-3. **NoteDetailsView rewrite** - Connect to store, make editable
-4. **File upload utilities** - Handle photos/recordings/attachments
-5. **NoteCard back side** - Use real data
-6. **Testing** - Verify all interactions work
+1. **Store updates** - Add data model and methods ✅ DONE
+2. **Auto-extraction logic** - Implement tag/link extraction ✅ DONE
+3. **NoteDetailsView rewrite** - Connect to store, make editable ✅ DONE
+4. **File upload utilities** - Handle photos/recordings/attachments ✅ DONE
+5. **NoteCard back side** - Use real data ✅ DONE
+6. **Testing** - Verify all interactions work ⏳ PENDING
 
 ---
 
