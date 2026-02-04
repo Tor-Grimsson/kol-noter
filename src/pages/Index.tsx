@@ -1,10 +1,11 @@
 import { useState, useMemo, useEffect } from "react";
-import { UnifiedSidebar } from "@/components/UnifiedSidebar";
+import { UnifiedSidebar, HierarchySelectInfo } from "@/components/UnifiedSidebar";
 import { NotesList } from "@/components/NotesList";
 import { BlockEditor } from "@/components/BlockEditor";
 import { UnifiedMarkdownEditor } from "@/components/UnifiedMarkdownEditor";
 import { VisualEditor } from "@/components/VisualEditor";
 import { NoteDetailsView } from "@/components/NoteDetailsView";
+import { RootOverview, SystemOverview, ProjectOverview } from "@/components/overviews";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { NoteTabs } from "@/components/NoteTabs";
 import { Button } from "@/components/ui/button";
@@ -12,7 +13,7 @@ import { Eye, Moon, Folder, FolderX } from "lucide-react";
 import { useNotesStore, Block, VisualNode, EditorType } from "@/store/notesStore";
 
 const Index = () => {
-  const { systems, notes, getNote, updateNoteContent, updateNote, addNote, deleteNote } = useNotesStore();
+  const { systems, notes, getNote, updateNoteContent, updateNote, addNote, deleteNote, saveAttachment } = useNotesStore();
 
   const [selectedNoteId, setSelectedNoteId] = useState<string | undefined>("1");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -24,6 +25,15 @@ const Index = () => {
   const [editorType, setEditorType] = useState<EditorType>("modular");
   const [selectedSystemId, setSelectedSystemId] = useState<string | "all">("system-1");
   const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>("project-1");
+  const [viewMode, setViewMode] = useState<'editor' | 'overview'>('editor');
+  const [overviewTarget, setOverviewTarget] = useState<HierarchySelectInfo | null>(null);
+  const [previousOverviewTarget, setPreviousOverviewTarget] = useState<HierarchySelectInfo | null>(null);
+
+  // Handler to close overview and return to editor
+  const handleOverviewClose = () => {
+    setViewMode('editor');
+    setOverviewTarget(null);
+  };
 
   // Build tabs from notes in store
   const [openTabs, setOpenTabs] = useState(() => {
@@ -83,6 +93,31 @@ const Index = () => {
   const handleSystemProjectSelect = (systemId: string | "all", projectId?: string) => {
     setSelectedSystemId(systemId);
     setSelectedProjectId(projectId);
+  };
+
+  const handleHierarchySelect = (info: HierarchySelectInfo) => {
+    // For root, system, and project levels, show overview
+    if (info.level === 'root' || info.level === 'system' || info.level === 'project') {
+      // Check if clicking the same item again - if so, return to editor
+      if (
+        viewMode === 'overview' &&
+        overviewTarget?.level === info.level &&
+        overviewTarget?.id === info.id
+      ) {
+        setViewMode('editor');
+        setOverviewTarget(null);
+        return;
+      }
+
+      setPreviousOverviewTarget(overviewTarget);
+      setViewMode('overview');
+      setOverviewTarget(info);
+      setShowNoteDetails(false);
+    } else {
+      // For note, page, and section levels, show editor
+      setViewMode('editor');
+      setOverviewTarget(null);
+    }
   };
 
   // Handle content changes from editors
@@ -199,6 +234,13 @@ const Index = () => {
       return [{ id: "1", type: "start", label: "Start", x: 200, y: 100 }];
     };
 
+    // Create a handler for saving attachments for the current note
+    const handleSaveAttachment = (filename: string, dataUrl: string) => {
+      if (activeTabId) {
+        saveAttachment(activeTabId, filename, dataUrl);
+      }
+    };
+
     switch (currentEditorType) {
       case "standard":
       case "typography":
@@ -207,6 +249,8 @@ const Index = () => {
             focusMode={focusMode}
             content={getTextContent()}
             onChange={(content) => handleContentChange(content)}
+            attachments={currentNote?.attachments}
+            onSaveAttachment={handleSaveAttachment}
           />
         );
       case "visual":
@@ -229,30 +273,113 @@ const Index = () => {
     }
   };
 
+  const renderOverview = () => {
+    if (!overviewTarget) return null;
+
+    switch (overviewTarget.level) {
+      case 'root':
+        return (
+          <RootOverview
+            onSystemSelect={(systemId) => {
+              setSelectedSystemId(systemId);
+              setSelectedProjectId(undefined);
+              handleHierarchySelect({ level: 'system', id: systemId });
+            }}
+            onClose={handleOverviewClose}
+          />
+        );
+      case 'system':
+        return (
+          <SystemOverview
+            systemId={overviewTarget.id || ''}
+            onProjectSelect={(projectId) => {
+              setSelectedProjectId(projectId);
+              handleHierarchySelect({
+                level: 'project',
+                id: projectId,
+                parentIds: { systemId: overviewTarget.id }
+              });
+            }}
+            onRootSelect={() => {
+              setSelectedSystemId("all");
+              setSelectedProjectId(undefined);
+              handleHierarchySelect({ level: 'root' });
+            }}
+            onClose={handleOverviewClose}
+          />
+        );
+      case 'project':
+        const projectSystemId = overviewTarget.parentIds?.systemId || (selectedSystemId !== 'all' ? selectedSystemId : '');
+        return (
+          <ProjectOverview
+            systemId={projectSystemId}
+            projectId={overviewTarget.id || ''}
+            onNoteSelect={(noteId, editorType) => {
+              handleNoteSelect(noteId, editorType);
+              setViewMode('editor');
+              setOverviewTarget(null);
+            }}
+            onSystemSelect={(systemId) => {
+              setSelectedSystemId(systemId);
+              setSelectedProjectId(undefined);
+              handleHierarchySelect({ level: 'system', id: systemId });
+            }}
+            onRootSelect={() => {
+              setSelectedSystemId("all");
+              setSelectedProjectId(undefined);
+              handleHierarchySelect({ level: 'root' });
+            }}
+            onClose={handleOverviewClose}
+          />
+        );
+      default:
+        return null;
+    }
+  };
+
+  const renderMainContent = () => {
+    if (viewMode === 'overview' && overviewTarget) {
+      return renderOverview();
+    }
+    return renderEditor();
+  };
+
   return (
     <div 
       className="flex h-screen w-full overflow-hidden bg-background text-foreground"
       style={invertColors ? { filter: 'invert(1) hue-rotate(180deg)' } : {}}
     >
       {!focusMode && (
-        <UnifiedSidebar 
+        <UnifiedSidebar
           collapsed={sidebarCollapsed}
-          onNoteSelect={handleNoteSelect} 
+          onNoteSelect={(noteId, type) => {
+            handleNoteSelect(noteId, type);
+            // When clicking a note directly, switch to editor mode
+            setViewMode('editor');
+            setOverviewTarget(null);
+          }}
           selectedNoteId={selectedNoteId}
           onSystemProjectSelect={handleSystemProjectSelect}
+          onHierarchySelect={handleHierarchySelect}
         />
       )}
 
-      {/* Notes Sidebar */}
-      {notesVisible && !focusMode && (
-        <NotesList 
-          onNoteSelect={handleNoteSelect} 
+      {/* Notes Sidebar - hidden when in overview mode */}
+      {notesVisible && !focusMode && viewMode === 'editor' && (
+        <NotesList
+          onNoteSelect={(noteId, type) => {
+            handleNoteSelect(noteId, type);
+            setViewMode('editor');
+            setOverviewTarget(null);
+          }}
           selectedNoteId={selectedNoteId}
           filterSystemId={selectedSystemId}
           filterProjectId={selectedProjectId}
           onCardFlip={(isFlipped, noteTitle) => {
             setShowNoteDetails(isFlipped);
             setDetailsNoteTitle(noteTitle);
+            setViewMode('editor');
+            setOverviewTarget(null);
           }}
         />
       )}
@@ -315,21 +442,23 @@ const Index = () => {
         </div>
         )}
 
-        {/* Tabs */}
-        {!focusMode && openTabs.length > 0 && (
+        {/* Tabs - only show when in editor mode */}
+        {!focusMode && openTabs.length > 0 && viewMode === 'editor' && (
           <NoteTabs
             tabs={openTabs}
             activeTabId={activeTabId}
             onTabSelect={(tabId) => {
               setActiveTabId(tabId);
               setSelectedNoteId(tabId);
+              setViewMode('editor');
+              setOverviewTarget(null);
             }}
             onTabClose={handleTabClose}
             onTabRename={handleTabRename}
           />
         )}
 
-        {renderEditor()}
+        {renderMainContent()}
       </div>
     </div>
   );

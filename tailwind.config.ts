@@ -152,6 +152,11 @@ export default {
         'glow': '0 0 20px hsl(var(--primary) / 0.3)',
         'accent-glow': '0 0 20px hsl(var(--accent) / 0.25)',
       },
+      fontFamily: {
+        'right-grotesk': ['Right Grotesk Mono', 'monospace'],
+        'jetbrains': ['JetBrains Mono', 'monospace'],
+        'meslo': ['Meslo LGS NF', 'monospace'],
+      },
     },
   },
   plugins: [

@@ -5,6 +5,7 @@ interface EditPaneProps {
   onChange: (content: string) => void;
   showLineNumbers: boolean;
   textareaRef?: React.RefObject<HTMLTextAreaElement>;
+  onSaveAttachment?: (filename: string, dataUrl: string) => void;
 }
 
 export const EditPane = ({
@@ -12,6 +13,7 @@ export const EditPane = ({
   onChange,
   showLineNumbers,
   textareaRef: externalRef,
+  onSaveAttachment,
 }: EditPaneProps) => {
   const internalRef = useRef<HTMLTextAreaElement>(null);
   const textareaRef = externalRef || internalRef;
@@ -31,6 +33,53 @@ export const EditPane = ({
       return () => textarea.removeEventListener("scroll", handleScroll);
     }
   }, [handleScroll, textareaRef]);
+
+  const handlePaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData.items;
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = () => {
+          const now = new Date();
+          const timestamp = now.getFullYear().toString() +
+            String(now.getMonth() + 1).padStart(2, '0') +
+            String(now.getDate()).padStart(2, '0') +
+            String(now.getHours()).padStart(2, '0') +
+            String(now.getMinutes()).padStart(2, '0') +
+            String(now.getSeconds()).padStart(2, '0');
+          const filename = `Pasted image ${timestamp}.png`;
+
+          // Insert the image syntax at cursor position
+          const textarea = textareaRef.current;
+          if (textarea) {
+            const start = textarea.selectionStart;
+            const end = textarea.selectionEnd;
+            const imageSyntax = `![[${filename}]]`;
+            const newContent = content.substring(0, start) + imageSyntax + content.substring(end);
+            onChange(newContent);
+
+            // Move cursor after inserted text
+            setTimeout(() => {
+              textarea.selectionStart = textarea.selectionEnd = start + imageSyntax.length;
+              textarea.focus();
+            }, 0);
+          }
+
+          // Save the attachment
+          if (onSaveAttachment) {
+            onSaveAttachment(filename, reader.result as string);
+          }
+        };
+        reader.readAsDataURL(file);
+        break;
+      }
+    }
+  }, [content, onChange, onSaveAttachment, textareaRef]);
 
   return (
     <div className="flex-1 flex overflow-hidden h-full">
@@ -55,7 +104,8 @@ export const EditPane = ({
         ref={textareaRef}
         value={content}
         onChange={(e) => onChange(e.target.value)}
-        className={`flex-1 py-4 px-4 bg-transparent font-mono text-sm resize-none focus:outline-none leading-6 overflow-auto ${
+        onPaste={handlePaste}
+        className={`flex-1 py-4 px-4 bg-transparent font-jetbrains text-sm resize-none focus:outline-none leading-6 overflow-auto ${
           showLineNumbers ? "whitespace-pre overflow-x-auto" : "whitespace-pre-wrap break-words"
         }`}
         placeholder="Start writing in markdown..."

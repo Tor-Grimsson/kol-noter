@@ -2,7 +2,44 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+/* Font Declarations */
+@font-face {
+  font-family: 'Right Grotesk Mono';
+  src: url('/fonts/RightGrotesk-Mono/PPRightGroteskMono-Medium.woff') format('woff');
+  font-weight: 500;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('/fonts/Jetbrains-Mono/fonts/webfonts/JetBrainsMono-Regular.woff2') format('woff2');
+  font-weight: 400;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('/fonts/Jetbrains-Mono/fonts/webfonts/JetBrainsMono-Medium.woff2') format('woff2');
+  font-weight: 500;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('/fonts/Jetbrains-Mono/fonts/webfonts/JetBrainsMono-Bold.woff2') format('woff2');
+  font-weight: 700;
+}
+
+@font-face {
+  font-family: 'Meslo LGS NF';
+  src: url('/fonts/Meslo-LGS-NF/ttf/MesloLGS NF Regular.ttf') format('truetype');
+  font-weight: 400;
+}
+
+@font-face {
+  font-family: 'Meslo LGS NF';
+  src: url('/fonts/Meslo-LGS-NF/ttf/MesloLGS NF Bold.ttf') format('truetype');
+  font-weight: 700;
+}
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here.
 All colors MUST be HSL.
 */
 
@@ -40,8 +77,8 @@ All colors MUST be HSL.
     --secondary: 240 5% 15%;
     --secondary-foreground: 240 5% 96%;
 
-    /* Accent - Bright purple for highlights */
-    --accent: 262 75% 60%;
+    /* Accent - Muted neutral for highlights */
+    --accent: 240 5% 18%;
     --accent-foreground: 240 5% 96%;
 
     /* Muted - For secondary text */
@@ -73,7 +110,7 @@ All colors MUST be HSL.
     --input-border: 240 6% 20%;
 
     /* Focus ring */
-    --ring: 262 80% 65%;
+    --ring: 44 91% 54%;
 
     /* Popover */
     --popover: 240 6% 10%;
@@ -89,12 +126,12 @@ All colors MUST be HSL.
     /* Sidebar tokens */
     --sidebar-background: 240 10% 5%;
     --sidebar-foreground: 240 5% 82%;
-    --sidebar-primary: 262 80% 65%;
-    --sidebar-primary-foreground: 240 5% 96%;
+    --sidebar-primary: 44 91% 54%;
+    --sidebar-primary-foreground: 240 10% 5%;
     --sidebar-accent: 240 5% 12%;
     --sidebar-accent-foreground: 240 5% 96%;
     --sidebar-border: 240 6% 12%;
-    --sidebar-ring: 262 80% 65%;
+    --sidebar-ring: 44 91% 54%;
 
     /* Transitions */
     --transition-smooth: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
@@ -102,7 +139,7 @@ All colors MUST be HSL.
 
     /* Gradients */
     --gradient-primary: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--primary-hover)) 100%);
-    --gradient-accent: linear-gradient(135deg, hsl(var(--accent)) 0%, hsl(262 85% 70%) 100%);
+    --gradient-accent: linear-gradient(135deg, hsl(var(--accent)) 0%, hsl(240 5% 22%) 100%);
     --gradient-subtle: linear-gradient(180deg, hsl(240 8% 9%) 0%, hsl(240 8% 7%) 100%);
     
     /* Shadows */

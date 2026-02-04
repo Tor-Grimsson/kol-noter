@@ -4,6 +4,34 @@ import { useLocalStorage } from "@/hooks/useLocalStorage";
 // Types
 export type EditorType = "modular" | "standard" | "visual" | "typography";
 
+export type HealthStatus = 'good' | 'warning' | 'critical';
+export type PriorityLevel = 'high' | 'medium' | 'low';
+export type ItemStatus = 'not_started' | 'in_progress' | 'done' | 'blocked';
+
+export interface ItemMetrics {
+  health?: HealthStatus;
+  priority?: PriorityLevel;
+  lead?: string;
+  targetDate?: string;
+  status?: ItemStatus;
+}
+
+export interface TagWithColor {
+  name: string;
+  color: string;
+}
+
+export const TAG_COLOR_PRESETS = [
+  { name: 'red', value: '#ef4444' },
+  { name: 'orange', value: '#f97316' },
+  { name: 'yellow', value: '#eab308' },
+  { name: 'green', value: '#22c55e' },
+  { name: 'blue', value: '#3b82f6' },
+  { name: 'purple', value: '#a855f7' },
+  { name: 'pink', value: '#ec4899' },
+  { name: 'gray', value: '#6b7280' },
+];
+
 export interface Block {
   id: string;
   type: "heading" | "paragraph" | "code" | "list" | "image" | "section";
@@ -25,14 +53,36 @@ export interface VisualNode {
   connections?: string[];
 }
 
+export interface Reminder {
+  date: string;
+  text: string;
+}
+
 export interface Project {
   id: string;
   name: string;
+  description?: string;
+  tags?: string[];
+  tagColors?: { [tagName: string]: string };
+  attachments?: { [filename: string]: string };
+  mentions?: string[]; // IDs of linked items
+  reminders?: Reminder[];
+  metrics?: ItemMetrics;
+  createdAt?: number;
+  updatedAt?: number;
 }
 
 export interface System {
   id: string;
   name: string;
+  description?: string;
+  tags?: string[];
+  tagColors?: { [tagName: string]: string };
+  attachments?: { [filename: string]: string };
+  mentions?: string[]; // IDs of linked items
+  reminders?: Reminder[];
+  createdAt?: number;
+  updatedAt?: number;
   projects: Project[];
 }
 
@@ -42,12 +92,17 @@ export interface Note {
   preview: string;
   date: string;
   tags: string[];
+  tagColors?: { [tagName: string]: string };
   favorite?: boolean;
   color?: string;
   systemId: string;
   projectId: string;
   editorType: EditorType;
   content: Block[] | string | VisualNode[];
+  attachments?: {
+    [filename: string]: string; // filename -> base64 data URL
+  };
+  metrics?: ItemMetrics;
   createdAt: number;
   updatedAt: number;
 }
@@ -59,15 +114,20 @@ interface NotesStore {
   // System operations
   addSystem: (name: string) => System;
   updateSystem: (id: string, name: string) => void;
+  updateSystemMetadata: (id: string, updates: Partial<Omit<System, "id" | "projects">>) => void;
   deleteSystem: (id: string) => void;
+  getSystem: (id: string) => System | undefined;
   // Project operations
   addProject: (systemId: string, name: string) => Project | null;
   updateProject: (systemId: string, projectId: string, name: string) => void;
+  updateProjectMetadata: (systemId: string, projectId: string, updates: Partial<Omit<Project, "id">>) => void;
   deleteProject: (systemId: string, projectId: string) => void;
+  getProject: (systemId: string, projectId: string) => Project | undefined;
   // Note operations
   addNote: (systemId: string, projectId: string, editorType: EditorType) => Note;
   updateNote: (id: string, updates: Partial<Omit<Note, "id">>) => void;
   updateNoteContent: (id: string, content: Block[] | string | VisualNode[]) => void;
+  saveAttachment: (noteId: string, filename: string, dataUrl: string) => void;
   deleteNote: (id: string) => void;
   restoreNote: (id: string) => void;
   permanentlyDeleteNote: (id: string) => void;
@@ -75,6 +135,15 @@ interface NotesStore {
   getNote: (id: string) => Note | undefined;
   getNotesByProject: (systemId: string, projectId: string) => Note[];
   getNotesBySystem: (systemId: string) => Note[];
+  // Tag operations
+  extractTagsFromContent: (noteId: string) => string[];
+  getAggregatedTags: (level: 'project' | 'system' | 'root', id?: string) => string[];
+  updateNoteTagColor: (noteId: string, tagName: string, color: string) => void;
+  updateProjectTagColor: (systemId: string, projectId: string, tagName: string, color: string) => void;
+  updateSystemTagColor: (systemId: string, tagName: string, color: string) => void;
+  // Metrics operations
+  updateNoteMetrics: (noteId: string, metrics: Partial<ItemMetrics>) => void;
+  updateProjectMetrics: (systemId: string, projectId: string, metrics: Partial<ItemMetrics>) => void;
 }
 
 // Default data
@@ -250,6 +319,21 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     setNotes(notes.filter(n => n.systemId !== id));
   };
 
+  const updateSystemMetadata = (id: string, updates: Partial<Omit<System, "id" | "projects">>) => {
+    setSystems(systems.map(s => {
+      if (s.id !== id) return s;
+      return {
+        ...s,
+        ...updates,
+        updatedAt: Date.now(),
+      };
+    }));
+  };
+
+  const getSystem = (id: string): System | undefined => {
+    return systems.find(s => s.id === id);
+  };
+
   // Project operations
   const addProject = (systemId: string, name: string): Project | null => {
     const newProject: Project = {
@@ -288,6 +372,28 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     }));
     // Also delete all notes in this project
     setNotes(notes.filter(n => !(n.systemId === systemId && n.projectId === projectId)));
+  };
+
+  const updateProjectMetadata = (systemId: string, projectId: string, updates: Partial<Omit<Project, "id">>) => {
+    setSystems(systems.map(s => {
+      if (s.id !== systemId) return s;
+      return {
+        ...s,
+        projects: s.projects.map(p => {
+          if (p.id !== projectId) return p;
+          return {
+            ...p,
+            ...updates,
+            updatedAt: Date.now(),
+          };
+        }),
+      };
+    }));
+  };
+
+  const getProject = (systemId: string, projectId: string): Project | undefined => {
+    const system = systems.find(s => s.id === systemId);
+    return system?.projects.find(p => p.id === projectId);
   };
 
   // Note operations
@@ -339,6 +445,20 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       return {
         ...n,
         ...updates,
+        updatedAt: Date.now(),
+      };
+    }));
+  };
+
+  const saveAttachment = (noteId: string, filename: string, dataUrl: string) => {
+    setNotes(notes.map(n => {
+      if (n.id !== noteId) return n;
+      return {
+        ...n,
+        attachments: {
+          ...n.attachments,
+          [filename]: dataUrl,
+        },
         updatedAt: Date.now(),
       };
     }));
@@ -433,19 +553,178 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     return notes.filter(n => n.systemId === systemId);
   };
 
+  // Extract hashtags from note content
+  const extractTagsFromContent = (noteId: string): string[] => {
+    const note = notes.find(n => n.id === noteId);
+    if (!note) return [];
+
+    let content = '';
+    if (typeof note.content === 'string') {
+      content = note.content;
+    } else if (Array.isArray(note.content)) {
+      // Extract from blocks
+      const first = note.content[0] as any;
+      if (first?.type && ["heading", "paragraph", "code", "list", "image", "section"].includes(first.type)) {
+        content = (note.content as Block[]).map(b => b.content || '').join(' ');
+      }
+    }
+
+    // Match #tagname patterns (alphanumeric and underscores)
+    const matches = content.match(/#(\w+)/g) || [];
+    return [...new Set(matches.map(m => m.slice(1)))]; // Remove # prefix and deduplicate
+  };
+
+  // Get aggregated tags from all items at a level
+  const getAggregatedTags = (level: 'project' | 'system' | 'root', id?: string): string[] => {
+    const allTags: string[] = [];
+
+    switch (level) {
+      case 'project': {
+        if (!id) return [];
+        const projectNotes = notes.filter(n => n.projectId === id);
+        projectNotes.forEach(note => {
+          allTags.push(...(note.tags || []));
+          allTags.push(...extractTagsFromContent(note.id));
+        });
+        break;
+      }
+      case 'system': {
+        if (!id) return [];
+        const systemNotes = notes.filter(n => n.systemId === id);
+        systemNotes.forEach(note => {
+          allTags.push(...(note.tags || []));
+          allTags.push(...extractTagsFromContent(note.id));
+        });
+        // Also include project tags
+        const system = systems.find(s => s.id === id);
+        system?.projects.forEach(p => {
+          allTags.push(...(p.tags || []));
+        });
+        break;
+      }
+      case 'root': {
+        notes.forEach(note => {
+          allTags.push(...(note.tags || []));
+          allTags.push(...extractTagsFromContent(note.id));
+        });
+        systems.forEach(system => {
+          allTags.push(...(system.tags || []));
+          system.projects.forEach(p => {
+            allTags.push(...(p.tags || []));
+          });
+        });
+        break;
+      }
+    }
+
+    return [...new Set(allTags)];
+  };
+
+  // Update tag color for a note
+  const updateNoteTagColor = (noteId: string, tagName: string, color: string) => {
+    setNotes(notes.map(n => {
+      if (n.id !== noteId) return n;
+      return {
+        ...n,
+        tagColors: {
+          ...n.tagColors,
+          [tagName]: color,
+        },
+        updatedAt: Date.now(),
+      };
+    }));
+  };
+
+  // Update tag color for a project
+  const updateProjectTagColor = (systemId: string, projectId: string, tagName: string, color: string) => {
+    setSystems(systems.map(s => {
+      if (s.id !== systemId) return s;
+      return {
+        ...s,
+        projects: s.projects.map(p => {
+          if (p.id !== projectId) return p;
+          return {
+            ...p,
+            tagColors: {
+              ...p.tagColors,
+              [tagName]: color,
+            },
+            updatedAt: Date.now(),
+          };
+        }),
+      };
+    }));
+  };
+
+  // Update tag color for a system
+  const updateSystemTagColor = (systemId: string, tagName: string, color: string) => {
+    setSystems(systems.map(s => {
+      if (s.id !== systemId) return s;
+      return {
+        ...s,
+        tagColors: {
+          ...s.tagColors,
+          [tagName]: color,
+        },
+        updatedAt: Date.now(),
+      };
+    }));
+  };
+
+  // Update metrics for a note
+  const updateNoteMetrics = (noteId: string, metrics: Partial<ItemMetrics>) => {
+    setNotes(notes.map(n => {
+      if (n.id !== noteId) return n;
+      return {
+        ...n,
+        metrics: {
+          ...n.metrics,
+          ...metrics,
+        },
+        updatedAt: Date.now(),
+      };
+    }));
+  };
+
+  // Update metrics for a project
+  const updateProjectMetrics = (systemId: string, projectId: string, metrics: Partial<ItemMetrics>) => {
+    setSystems(systems.map(s => {
+      if (s.id !== systemId) return s;
+      return {
+        ...s,
+        projects: s.projects.map(p => {
+          if (p.id !== projectId) return p;
+          return {
+            ...p,
+            metrics: {
+              ...p.metrics,
+              ...metrics,
+            },
+            updatedAt: Date.now(),
+          };
+        }),
+      };
+    }));
+  };
+
   const store: NotesStore = {
     systems,
     notes,
     trash,
     addSystem,
     updateSystem,
+    updateSystemMetadata,
     deleteSystem,
+    getSystem,
     addProject,
     updateProject,
+    updateProjectMetadata,
     deleteProject,
+    getProject,
     addNote,
     updateNote,
     updateNoteContent,
+    saveAttachment,
     deleteNote,
     restoreNote,
     permanentlyDeleteNote,
@@ -453,6 +732,13 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     getNote,
     getNotesByProject,
     getNotesBySystem,
+    extractTagsFromContent,
+    getAggregatedTags,
+    updateNoteTagColor,
+    updateProjectTagColor,
+    updateSystemTagColor,
+    updateNoteMetrics,
+    updateProjectMetrics,
   };
 
   return (

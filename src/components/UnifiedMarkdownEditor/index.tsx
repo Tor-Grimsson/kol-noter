@@ -12,6 +12,8 @@ interface UnifiedMarkdownEditorProps {
   content?: string;
   onChange?: (content: string) => void;
   focusMode?: boolean;
+  attachments?: { [filename: string]: string };
+  onSaveAttachment?: (filename: string, dataUrl: string) => void;
 }
 
 const defaultContent = `# Welcome to Unified Markdown Editor
@@ -63,6 +65,8 @@ export const UnifiedMarkdownEditor = ({
   content: propContent,
   onChange,
   focusMode,
+  attachments,
+  onSaveAttachment,
 }: UnifiedMarkdownEditorProps) => {
   const [content, setContent] = useState(propContent ?? defaultContent);
   const [showPreview, setShowPreview] = useState(false);
@@ -167,11 +171,12 @@ export const UnifiedMarkdownEditor = ({
               onChange={handleContentChange}
               showLineNumbers={showLineNumbers}
               textareaRef={textareaRef}
+              onSaveAttachment={onSaveAttachment}
             />
           </ResizablePanel>
           <ResizableHandle withHandle />
           <ResizablePanel defaultSize={50} minSize={30} className="h-full">
-            <PreviewPane content={content} />
+            <PreviewPane content={content} attachments={attachments} />
           </ResizablePanel>
         </ResizablePanelGroup>
       );
@@ -180,7 +185,7 @@ export const UnifiedMarkdownEditor = ({
     // Preview only
     if (showPreview) {
       return (
-        <PreviewPane content={content} onClickToEdit={handleClickToEdit} />
+        <PreviewPane content={content} onClickToEdit={handleClickToEdit} attachments={attachments} />
       );
     }
 
@@ -191,6 +196,7 @@ export const UnifiedMarkdownEditor = ({
         onChange={handleContentChange}
         showLineNumbers={showLineNumbers}
         textareaRef={textareaRef}
+        onSaveAttachment={onSaveAttachment}
       />
     );
   };

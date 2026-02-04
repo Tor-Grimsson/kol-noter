@@ -8,7 +8,7 @@ import Index from "./pages/Index";
 import { ProjectView } from "./pages/ProjectView";
 import Projects from "./pages/Projects";
 import Hierarchy from "./pages/Hierarchy";
-import Stylesheet from "./pages/Stylesheet";
+import Docs from "./pages/Docs";
 import Trash from "./pages/Trash";
 import NotFound from "./pages/NotFound";
 
@@ -26,7 +26,7 @@ const App = () => (
             <Route path="/projects" element={<Projects />} />
             <Route path="/projects-view" element={<ProjectView />} />
             <Route path="/hierarchy" element={<Hierarchy />} />
-            <Route path="/stylesheet" element={<Stylesheet />} />
+            <Route path="/docs" element={<Docs />} />
             <Route path="/trash" element={<Trash />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />

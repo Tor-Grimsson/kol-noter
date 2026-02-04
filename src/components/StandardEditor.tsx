@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Bold, Italic, List, Code, Image, Link, Mic } from "lucide-react";
@@ -16,6 +16,7 @@ interface StandardEditorProps {
   content?: string;
   onChange?: (content: string) => void;
   focusMode?: boolean;
+  onSaveAttachment?: (filename: string, dataUrl: string) => void;
 }
 
 const defaultContent = `# Welcome to Standard Editor
@@ -35,9 +36,10 @@ This is a **markdown-based editor** where you can write with familiar markdown s
 Start typing to create your document. Use the toolbar above for quick formatting options.
 `;
 
-export const StandardEditor = ({ content: propContent, onChange, focusMode }: StandardEditorProps) => {
+export const StandardEditor = ({ content: propContent, onChange, focusMode, onSaveAttachment }: StandardEditorProps) => {
   const [content, setContent] = useState(propContent || defaultContent);
   const debounceRef = useRef<NodeJS.Timeout>();
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Sync with prop changes (switching notes)
   useEffect(() => {
@@ -57,6 +59,53 @@ export const StandardEditor = ({ content: propContent, onChange, focusMode }: St
       onChange?.(newContent);
     }, 500);
   };
+
+  const handlePaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData.items;
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = () => {
+          const now = new Date();
+          const timestamp = now.getFullYear().toString() +
+            String(now.getMonth() + 1).padStart(2, '0') +
+            String(now.getDate()).padStart(2, '0') +
+            String(now.getHours()).padStart(2, '0') +
+            String(now.getMinutes()).padStart(2, '0') +
+            String(now.getSeconds()).padStart(2, '0');
+          const filename = `Pasted image ${timestamp}.png`;
+
+          // Insert the image syntax at cursor position
+          const textarea = textareaRef.current;
+          if (textarea) {
+            const start = textarea.selectionStart;
+            const end = textarea.selectionEnd;
+            const imageSyntax = `![[${filename}]]`;
+            const newContent = content.substring(0, start) + imageSyntax + content.substring(end);
+            handleContentChange(newContent);
+
+            // Move cursor after inserted text
+            setTimeout(() => {
+              textarea.selectionStart = textarea.selectionEnd = start + imageSyntax.length;
+              textarea.focus();
+            }, 0);
+          }
+
+          // Save the attachment
+          if (onSaveAttachment) {
+            onSaveAttachment(filename, reader.result as string);
+          }
+        };
+        reader.readAsDataURL(file);
+        break;
+      }
+    }
+  }, [content, onSaveAttachment]);
 
   const insertMarkdown = (syntax: string, placeholder = "") => {
     const textarea = document.querySelector('textarea');
@@ -172,9 +221,11 @@ export const StandardEditor = ({ content: propContent, onChange, focusMode }: St
       
       <div className={focusMode ? '' : 'p-6'}>
         <Textarea
+          ref={textareaRef}
           value={content}
           onChange={(e) => handleContentChange(e.target.value)}
-          className="w-full min-h-[calc(100vh-200px)] bg-transparent border-0 focus-visible:ring-0 font-mono text-sm resize-none"
+          onPaste={handlePaste}
+          className="w-full min-h-[calc(100vh-200px)] bg-transparent border-0 focus-visible:ring-0 font-jetbrains text-sm resize-none"
           placeholder="Start writing in markdown..."
         />
       </div>

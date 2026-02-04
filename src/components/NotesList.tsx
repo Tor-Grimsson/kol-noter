@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { Search, Plus, GripVertical, FileText, Network, Type, Boxes } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { Search, Plus, GripVertical, FileText, Network, Type, Boxes, X } from "lucide-react";
 import { NoteCard } from "@/components/NoteCard";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -33,6 +33,10 @@ export const NotesList = ({ onNoteSelect, selectedNoteId, onCardFlip, filterSyst
   };
   const [width, setWidth] = useState(320);
   const [isResizing, setIsResizing] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchVisible, setSearchVisible] = useState(false);
+  const [scrollTop, setScrollTop] = useState(0);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const MIN_WIDTH = 200;
   const MAX_WIDTH = 600;
 
@@ -61,13 +65,36 @@ export const NotesList = ({ onNoteSelect, selectedNoteId, onCardFlip, filterSyst
   }, [isResizing]);
 
 
-  // Filter notes based on selected system and project
-  const filteredNotes = notes.filter(note => {
-    if (filterSystemId === "all") return true;
-    if (filterProjectId) {
-      return note.systemId === filterSystemId && note.projectId === filterProjectId;
+  // Handle scroll to show/hide search
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLDivElement;
+    const newScrollTop = target.scrollTop;
+    setScrollTop(newScrollTop);
+
+    // Show search when scrolled to top (overscroll effect)
+    if (newScrollTop <= 0 && !searchVisible) {
+      setSearchVisible(true);
     }
-    return note.systemId === filterSystemId;
+  };
+
+  // Filter notes based on selected system, project, and search query
+  const filteredNotes = notes.filter(note => {
+    // System/project filter
+    if (filterSystemId !== "all") {
+      if (filterProjectId) {
+        if (note.systemId !== filterSystemId || note.projectId !== filterProjectId) {
+          return false;
+        }
+      } else if (note.systemId !== filterSystemId) {
+        return false;
+      }
+    }
+    // Search filter
+    if (searchQuery) {
+      return note.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+             note.preview.toLowerCase().includes(searchQuery.toLowerCase());
+    }
+    return true;
   });
 
   const handleCreateNote = (type: EditorType) => {
@@ -80,7 +107,7 @@ export const NotesList = ({ onNoteSelect, selectedNoteId, onCardFlip, filterSyst
 
   return (
     <div className="border-r border-border bg-list-bg flex flex-col relative" style={{ width: `${width}px` }}>
-      <div className="p-4 border-b border-border space-y-3">
+      <div className="p-4 border-b border-border">
         <div className="flex items-center justify-between">
           <h2 className="text-xs font-semibold text-foreground">Notes</h2>
           <DropdownMenu>
@@ -90,7 +117,7 @@ export const NotesList = ({ onNoteSelect, selectedNoteId, onCardFlip, filterSyst
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-64 bg-background border-border z-50">
-              <DropdownMenuItem 
+              <DropdownMenuItem
                 className="flex items-start gap-3 p-3 cursor-pointer"
                 onClick={() => handleCreateNote("modular")}
               >
@@ -100,7 +127,7 @@ export const NotesList = ({ onNoteSelect, selectedNoteId, onCardFlip, filterSyst
                   <div className="text-xs text-muted-foreground">Rearrangeable blocks</div>
                 </div>
               </DropdownMenuItem>
-              <DropdownMenuItem 
+              <DropdownMenuItem
                 className="flex items-start gap-3 p-3 cursor-pointer"
                 onClick={() => handleCreateNote("standard")}
               >
@@ -110,7 +137,7 @@ export const NotesList = ({ onNoteSelect, selectedNoteId, onCardFlip, filterSyst
                   <div className="text-xs text-muted-foreground">Markdown editor</div>
                 </div>
               </DropdownMenuItem>
-              <DropdownMenuItem 
+              <DropdownMenuItem
                 className="flex items-start gap-3 p-3 cursor-pointer"
                 onClick={() => handleCreateNote("visual")}
               >
@@ -120,7 +147,7 @@ export const NotesList = ({ onNoteSelect, selectedNoteId, onCardFlip, filterSyst
                   <div className="text-xs text-muted-foreground">Node-based flowchart</div>
                 </div>
               </DropdownMenuItem>
-              <DropdownMenuItem 
+              <DropdownMenuItem
                 className="flex items-start gap-3 p-3 cursor-pointer"
                 onClick={() => handleCreateNote("typography")}
               >
@@ -133,17 +160,39 @@ export const NotesList = ({ onNoteSelect, selectedNoteId, onCardFlip, filterSyst
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            placeholder="Search notes..."
-            className="pl-9 bg-input border-input-border h-9 text-xs focus-visible:ring-primary"
-          />
-        </div>
       </div>
 
-      <ScrollArea className="flex-1">
+      <ScrollArea className="flex-1" onScrollCapture={handleScroll}>
         <div className="p-2 space-y-2">
+          {/* Pull-to-reveal search */}
+          <div
+            className={cn(
+              "overflow-hidden transition-all duration-300 ease-out",
+              searchVisible ? "max-h-12 opacity-100 mb-2" : "max-h-0 opacity-0"
+            )}
+          >
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground pointer-events-none" />
+              <Input
+                placeholder="Search notes..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-8 pr-8 bg-input border-input-border h-8 text-xs focus-visible:ring-primary"
+              />
+              {(searchQuery || searchVisible) && (
+                <button
+                  onClick={() => {
+                    setSearchQuery("");
+                    setSearchVisible(false);
+                  }}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+          </div>
+
           {filteredNotes.map((note) => (
             <NoteCard
               key={note.id}
