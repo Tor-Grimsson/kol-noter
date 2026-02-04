@@ -8,6 +8,7 @@ import Index from "./pages/Index";
 import { ProjectView } from "./pages/ProjectView";
 import Docs from "./pages/Docs";
 import Trash from "./pages/Trash";
+import ComponentTest from "./pages/component-test";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -24,6 +25,7 @@ const App = () => (
             <Route path="/projects-view" element={<ProjectView />} />
             <Route path="/docs" element={<Docs />} />
             <Route path="/trash" element={<Trash />} />
+            <Route path="/component-test" element={<ComponentTest />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>

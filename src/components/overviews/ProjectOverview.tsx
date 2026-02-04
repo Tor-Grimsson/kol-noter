@@ -17,6 +17,7 @@ import { useNotesStore, EditorType, TAG_COLOR_PRESETS } from "@/store/notesStore
 import { TagsEditor } from "./TagsEditor";
 import { useLocalStorage } from "@/hooks/useLocalStorage";
 import { AttachmentsPanel } from "@/components/AttachmentsPanel";
+import { ItemMetadataPanel } from "@/components/ItemMetadataPanel";
 
 interface ProjectOverviewProps {
   systemId: string;
@@ -46,7 +47,10 @@ export const ProjectOverview = ({
   const {
     systems, notes, getSystem, getProject, updateProjectMetadata, getNotesByProject,
     getAggregatedTags, updateProjectTagColor, addNote, getNote,
-    addProjectAttachment, removeProjectAttachment
+    addProjectAttachment, removeProjectAttachment,
+    addProjectPhoto, removeProjectPhoto, addProjectLink, removeProjectLink, updateProjectLink,
+    addProjectVoiceRecording, removeProjectVoiceRecording, updateProjectDetailNotes,
+    addProjectTag, removeProjectTag, deleteProject,
   } = useNotesStore();
   const system = getSystem(systemId);
   const project = getProject(systemId, projectId);
@@ -57,6 +61,11 @@ export const ProjectOverview = ({
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useLocalStorage("project-overview-sidebar-collapsed", true);
   const [sidebarPosition, setSidebarPosition] = useLocalStorage<'right' | 'bottom'>("overview-sidebar-position", "right");
+  const [sidebarWidth, setSidebarWidth] = useLocalStorage("project-overview-sidebar-width", 280);
+  const [isResizing, setIsResizing] = useState(false);
+  const resizingStartRef = useRef({ x: 0, width: 0 });
+  const MIN_SIDEBAR_WIDTH = 200;
+  const MAX_SIDEBAR_WIDTH = 480;
   const [isEditingDescription, setIsEditingDescription] = useState(false);
   const [editDescription, setEditDescription] = useState(project?.description || "");
   const descriptionInputRef = useRef<HTMLTextAreaElement>(null);
@@ -156,6 +165,33 @@ export const ProjectOverview = ({
     };
   }, [resizingColumn]);
 
+  // Sidebar resize handling
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleResizeMove = (e: MouseEvent) => {
+      const diff = sidebarPosition === 'right'
+        ? e.clientX - resizingStartRef.current.x
+        : resizingStartRef.current.x - e.clientX;
+      let newWidth = resizingStartRef.current.width + diff;
+
+      newWidth = Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, newWidth));
+      setSidebarWidth(newWidth);
+    };
+
+    const handleResizeEnd = () => {
+      setIsResizing(false);
+    };
+
+    document.addEventListener('mousemove', handleResizeMove);
+    document.addEventListener('mouseup', handleResizeEnd);
+
+    return () => {
+      document.removeEventListener('mousemove', handleResizeMove);
+      document.removeEventListener('mouseup', handleResizeEnd);
+    };
+  }, [isResizing, sidebarPosition]);
+
   const handleDescriptionSave = () => {
     updateProjectMetadata(systemId, projectId, { description: editDescription });
     setIsEditingDescription(false);
@@ -193,7 +229,13 @@ export const ProjectOverview = ({
       case "name":
         return (
           <div className="flex items-center gap-2">
-            <TargetIcon className="w-3 h-3 text-muted-foreground" />
+            <TargetIcon
+              className="w-3 h-3 text-muted-foreground cursor-pointer hover:text-foreground transition-colors"
+              onClick={(e) => {
+                e.stopPropagation();
+                onNoteSelect?.(note.id, note.editorType);
+              }}
+            />
             <span className="text-xs font-medium text-foreground">{note.title}</span>
           </div>
         );
@@ -262,11 +304,12 @@ export const ProjectOverview = ({
     }
   };
 
-  const renderSidebarContent = () => (
-    <div className="p-4 space-y-4">
-      {/* Selected Note Details or Project Details */}
-      {selectedNote ? (
-        <>
+  const renderSidebarContent = () => {
+    const isBottom = sidebarPosition === 'bottom';
+
+    if (selectedNote) {
+      return (
+        <div className="p-4 space-y-4">
           <section>
             <h2 className="text-sm font-medium text-muted-foreground mb-2">Selected Note</h2>
             <div className="p-2 rounded-lg bg-accent/30">
@@ -336,116 +379,49 @@ export const ProjectOverview = ({
               Open Note
             </Button>
           </section>
-        </>
-      ) : (
-        <>
-          {/* Description */}
-          <section>
-            <h2 className="text-sm font-medium text-muted-foreground mb-2">Description</h2>
-            {isEditingDescription ? (
-              <div className="space-y-2">
-                <Textarea
-                  ref={descriptionInputRef}
-                  value={editDescription}
-                  onChange={(e) => setEditDescription(e.target.value)}
-                  placeholder="Add a description..."
-                  className="min-h-[80px] resize-none text-sm"
-                />
-                <div className="flex gap-2">
-                  <Button size="sm" onClick={handleDescriptionSave} className="h-7 text-sm">Save</Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-7 text-sm"
-                    onClick={() => {
-                      setEditDescription(project.description || "");
-                      setIsEditingDescription(false);
-                    }}
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <div
-                className="p-2 rounded-lg bg-accent/30 min-h-[50px] cursor-pointer hover:bg-accent/50 transition-colors"
-                onClick={() => setIsEditingDescription(true)}
-              >
-                <p className="text-sm">
-                  {project.description || "Click to add a description..."}
-                </p>
-              </div>
-            )}
-          </section>
+        </div>
+      );
+    }
 
-          {/* Tags */}
-          <section>
-            <h2 className="text-sm font-medium text-muted-foreground mb-2">Tags</h2>
-            <TagsEditor
-              tags={project.tags || []}
-              tagColors={project.tagColors}
-              onAddTag={handleAddTag}
-              onRemoveTag={handleRemoveTag}
-              onRenameTag={(oldName, newName) => {
-                const currentTags = project.tags || [];
-                const newTags = currentTags.map(t => t === oldName ? newName : t);
-                updateProjectMetadata(systemId, projectId, { tags: newTags });
-              }}
-              onColorChange={(tagName, color) => updateProjectTagColor(systemId, projectId, tagName, color)}
-              aggregatedTags={getAggregatedTags('project', projectId)}
-            />
-          </section>
-
-          {/* Attachments */}
-          <section>
-            <AttachmentsPanel
-              attachments={project.attachments || []}
-              onAddAttachment={(attachment) => addProjectAttachment(systemId, projectId, attachment)}
-              onRemoveAttachment={(attachmentId) => removeProjectAttachment(systemId, projectId, attachmentId)}
-            />
-          </section>
-
-          {/* Metadata */}
-          <section>
-            <h2 className="text-sm font-medium text-muted-foreground mb-2">Metadata</h2>
-            <div className="space-y-1">
-              <div className="flex justify-between items-center p-1.5 rounded bg-accent/30">
-                <span className="text-sm text-muted-foreground">Created</span>
-                <span className="text-sm">
-                  {project.createdAt
-                    ? new Date(project.createdAt).toLocaleDateString()
-                    : "-"}
-                </span>
-              </div>
-              <div className="flex justify-between items-center p-1.5 rounded bg-accent/30">
-                <span className="text-sm text-muted-foreground">Modified</span>
-                <span className="text-sm">
-                  {project.updatedAt
-                    ? new Date(project.updatedAt).toLocaleDateString()
-                    : "-"}
-                </span>
-              </div>
-              <div className="flex justify-between items-center p-1.5 rounded bg-accent/30">
-                <span className="text-sm text-muted-foreground">Notes</span>
-                <span className="text-sm">{projectNotes.length}</span>
-              </div>
-            </div>
-          </section>
-
-          {/* Quick Actions */}
-          <section>
-            <h2 className="text-sm font-medium text-muted-foreground mb-2">Quick Actions</h2>
-            <div className="space-y-1">
-              <Button variant="outline" className="w-full justify-start h-7 text-sm" size="sm" onClick={handleAddNote}>
-                <Plus className="w-4 h-4 mr-2" />
-                New Note
-              </Button>
-            </div>
-          </section>
-        </>
-      )}
-    </div>
-  );
+    return (
+      <ItemMetadataPanel
+        itemType="project"
+        itemName={project.name}
+        itemDescription={project.description}
+        createdAt={project.createdAt}
+        updatedAt={project.updatedAt}
+        isBottomPanel={isBottom}
+        attachments={project.attachments || []}
+        photos={project.photos || []}
+        links={project.links || []}
+        voiceRecordings={project.voiceRecordings || []}
+        tags={project.tags || []}
+        tagColors={project.tagColors}
+        aggregatedTags={getAggregatedTags('project', projectId)}
+        detailNotes={project.detailNotes}
+        onAddAttachment={(att) => addProjectAttachment(systemId, projectId, att)}
+        onRemoveAttachment={(attId) => removeProjectAttachment(systemId, projectId, attId)}
+        onAddPhoto={(name, dataUrl) => addProjectPhoto(systemId, projectId, name, dataUrl)}
+        onRemovePhoto={(photoId) => removeProjectPhoto(systemId, projectId, photoId)}
+        onAddLink={(url, title) => addProjectLink(systemId, projectId, url, title)}
+        onRemoveLink={(linkId) => removeProjectLink(systemId, projectId, linkId)}
+        onUpdateLink={(linkId, updates) => updateProjectLink(systemId, projectId, linkId, updates)}
+        onAddVoiceRecording={(name, dataUrl, duration) =>
+          addProjectVoiceRecording(systemId, projectId, name, dataUrl, duration)
+        }
+        onRemoveVoiceRecording={(recId) => removeProjectVoiceRecording(systemId, projectId, recId)}
+        onAddTag={(tag) => addProjectTag(systemId, projectId, tag)}
+        onRemoveTag={(tag) => removeProjectTag(systemId, projectId, tag)}
+        onUpdateDetailNotes={(notes) => updateProjectDetailNotes(systemId, projectId, notes)}
+        onDelete={() => {
+          if (confirm(`Delete project "${project.name}" and all its notes?`)) {
+            deleteProject(systemId, projectId);
+            onSystemSelect?.(systemId);
+          }
+        }}
+      />
+    );
+  };
 
   const renderMainContent = () => (
     <>
@@ -688,7 +664,10 @@ export const ProjectOverview = ({
 
           {/* Right Panel - Details */}
           {!sidebarCollapsed ? (
-            <div className="w-72 flex flex-col overflow-hidden bg-card">
+            <div
+              className="flex flex-col overflow-hidden bg-card relative"
+              style={{ width: `${sidebarWidth}px` }}
+            >
               <div className="h-10 border-b border-border flex items-center justify-between px-2">
                 <Button
                   variant="ghost"
@@ -711,6 +690,19 @@ export const ProjectOverview = ({
               <ScrollArea className="flex-1">
                 {renderSidebarContent()}
               </ScrollArea>
+              {/* Resize handle */}
+              <div
+                className="absolute left-0 top-0 h-full w-1 cursor-col-resize hover:bg-primary/50 transition-colors group"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  setIsResizing(true);
+                  resizingStartRef.current = { x: e.clientX, width: sidebarWidth };
+                }}
+              >
+                <div className="absolute left-0 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <GripVertical className="w-3 h-3 text-primary" />
+                </div>
+              </div>
             </div>
           ) : (
             <div className="w-10 flex flex-col items-center pt-2 bg-card border-l border-border">
@@ -774,7 +766,10 @@ export const ProjectOverview = ({
 
           {/* Bottom Panel - Details */}
           {!sidebarCollapsed ? (
-            <div className="h-64 flex flex-col overflow-hidden bg-card resize-y">
+            <div
+              className="flex flex-col overflow-hidden bg-card relative"
+              style={{ height: `${sidebarWidth}px` }}
+            >
               <div className="h-10 border-b border-border flex items-center justify-between px-2">
                 <Button
                   variant="ghost"
@@ -797,6 +792,19 @@ export const ProjectOverview = ({
               <ScrollArea className="flex-1">
                 {renderSidebarContent()}
               </ScrollArea>
+              {/* Resize handle */}
+              <div
+                className="absolute top-0 left-0 w-full h-1 cursor-row-resize hover:bg-primary/50 transition-colors group"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  setIsResizing(true);
+                  resizingStartRef.current = { x: e.clientY, width: sidebarWidth };
+                }}
+              >
+                <div className="absolute left-1/2 top-0 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <GripVertical className="w-3 h-3 text-primary rotate-90" />
+                </div>
+              </div>
             </div>
           ) : (
             <div className="h-10 flex items-center justify-center bg-card border-t border-border">

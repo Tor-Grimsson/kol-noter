@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { useNotesStore, TAG_COLOR_PRESETS } from "@/store/notesStore";
 import { useLocalStorage } from "@/hooks/useLocalStorage";
 import { AttachmentsPanel } from "@/components/AttachmentsPanel";
+import { ItemMetadataPanel } from "@/components/ItemMetadataPanel";
 
 interface RootOverviewProps {
   onSystemSelect?: (systemId: string) => void;
@@ -30,12 +31,22 @@ interface Column {
 }
 
 export const RootOverview = ({ onSystemSelect, onClose }: RootOverviewProps) => {
-  const { systems, notes, getAggregatedTags, addSystem, getSystem, addSystemAttachment, removeSystemAttachment } = useNotesStore();
+  const {
+    systems, notes, getAggregatedTags, addSystem, getSystem, addSystemAttachment, removeSystemAttachment,
+    addSystemPhoto, removeSystemPhoto, addSystemLink, removeSystemLink, updateSystemLink,
+    addSystemVoiceRecording, removeSystemVoiceRecording, updateSystemDetailNotes,
+    addSystemTag, removeSystemTag, deleteSystem,
+  } = useNotesStore();
   const [viewMode, setViewMode] = useState<"list" | "timeline">("list");
   const [calendarView, setCalendarView] = useState<"month" | "year" | "week">("month");
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useLocalStorage("root-overview-sidebar-collapsed", true);
   const [sidebarPosition, setSidebarPosition] = useLocalStorage<'right' | 'bottom'>("overview-sidebar-position", "right");
+  const [sidebarWidth, setSidebarWidth] = useLocalStorage("root-overview-sidebar-width", 280);
+  const [isResizing, setIsResizing] = useState(false);
+  const resizingStartRef = useRef({ x: 0, width: 0 });
+  const MIN_SIDEBAR_WIDTH = 200;
+  const MAX_SIDEBAR_WIDTH = 480;
   const [columns, setColumns] = useState<Column[]>([
     { id: "name", label: "Name", width: 300 },
     { id: "health", label: "Health", width: 150 },
@@ -111,6 +122,33 @@ export const RootOverview = ({ onSystemSelect, onClose }: RootOverviewProps) => 
       document.removeEventListener('mouseup', handleResizeEnd);
     };
   }, [resizingColumn]);
+
+  // Sidebar resize handling
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleResizeMove = (e: MouseEvent) => {
+      const diff = sidebarPosition === 'right'
+        ? e.clientX - resizingStartRef.current.x
+        : resizingStartRef.current.x - e.clientY;
+      let newWidth = resizingStartRef.current.width + diff;
+
+      newWidth = Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, newWidth));
+      setSidebarWidth(newWidth);
+    };
+
+    const handleResizeEnd = () => {
+      setIsResizing(false);
+    };
+
+    document.addEventListener('mousemove', handleResizeMove);
+    document.addEventListener('mouseup', handleResizeEnd);
+
+    return () => {
+      document.removeEventListener('mousemove', handleResizeMove);
+      document.removeEventListener('mouseup', handleResizeEnd);
+    };
+  }, [isResizing, sidebarPosition]);
 
   const handleAddSystem = () => {
     const newSystem = addSystem("New System");
@@ -201,142 +239,121 @@ export const RootOverview = ({ onSystemSelect, onClose }: RootOverviewProps) => 
     }
   };
 
-  const renderSidebarContent = () => (
-    <div className="p-4 space-y-4">
-      {/* Selected Item Details or Summary Stats */}
-      {selectedSystem ? (
-        <>
-          <section>
-            <h2 className="text-sm font-medium text-muted-foreground mb-2">Selected System</h2>
-            <div className="p-2 rounded-lg bg-accent/30">
-              <p className="text-sm font-medium">{selectedSystem.name}</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                {selectedSystem.description || "No description"}
-              </p>
-            </div>
-          </section>
-          <section>
-            <h2 className="text-sm font-medium text-muted-foreground mb-2">Details</h2>
-            <div className="space-y-1">
-              <div className="flex justify-between items-center p-1.5 rounded bg-accent/50">
-                <span className="text-sm">Projects</span>
-                <span className="text-sm font-medium">{selectedSystem.projects.length}</span>
-              </div>
-              <div className="flex justify-between items-center p-1.5 rounded bg-accent/50">
-                <span className="text-sm">Created</span>
-                <span className="text-sm font-medium">
-                  {selectedSystem.createdAt ? new Date(selectedSystem.createdAt).toLocaleDateString() : "-"}
-                </span>
-              </div>
-              <div className="flex justify-between items-center p-1.5 rounded bg-accent/50">
-                <span className="text-sm">Health</span>
-                <span className="text-sm font-medium">{selectedSystem.metrics?.health || "N/A"}</span>
-              </div>
-              <div className="flex justify-between items-center p-1.5 rounded bg-accent/50">
-                <span className="text-sm">Priority</span>
-                <span className="text-sm font-medium">{selectedSystem.metrics?.priority || "N/A"}</span>
-              </div>
-            </div>
-          </section>
-          {selectedSystem.tags && selectedSystem.tags.length > 0 && (
-            <section>
-              <h2 className="text-sm font-medium text-muted-foreground mb-2">Tags</h2>
-              <div className="flex flex-wrap gap-1">
-                {selectedSystem.tags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="px-2 py-0.5 text-sm rounded-full"
-                    style={{
-                      backgroundColor: `${TAG_COLOR_PRESETS[7].value}20`,
-                      color: TAG_COLOR_PRESETS[7].value,
-                    }}
-                  >
-                    {tag}
-                  </span>
-                ))}
-              </div>
-            </section>
-          )}
-          <section>
-            <AttachmentsPanel
-              attachments={selectedSystem.attachments || []}
-              onAddAttachment={(attachment) => addSystemAttachment(selectedSystem.id, attachment)}
-              onRemoveAttachment={(attachmentId) => removeSystemAttachment(selectedSystem.id, attachmentId)}
-            />
-          </section>
-        </>
-      ) : (
-        <>
-          <section>
-            <h2 className="text-sm font-medium text-muted-foreground mb-2">Summary</h2>
-            <div className="space-y-1">
-              <div className="flex justify-between items-center p-1.5 rounded bg-accent/50">
-                <span className="text-sm">Total Systems</span>
-                <span className="text-sm font-medium">{systems.length}</span>
-              </div>
-              <div className="flex justify-between items-center p-1.5 rounded bg-accent/50">
-                <span className="text-sm">Total Projects</span>
-                <span className="text-sm font-medium">
-                  {systems.reduce((acc, s) => acc + s.projects.length, 0)}
-                </span>
-              </div>
-              <div className="flex justify-between items-center p-1.5 rounded bg-accent/50">
-                <span className="text-sm">Total Notes</span>
-                <span className="text-sm font-medium">{notes.length}</span>
-              </div>
-            </div>
-          </section>
+  const renderSidebarContent = () => {
+    const isBottom = sidebarPosition === 'bottom';
 
-          <section>
-            <h2 className="text-sm font-medium text-muted-foreground mb-2">All Tags</h2>
-            <div className="flex flex-wrap gap-1">
-              {getAggregatedTags('root').map((tag) => (
-                <span
-                  key={tag}
-                  className="px-2 py-0.5 text-sm rounded-full"
-                  style={{
-                    backgroundColor: `${TAG_COLOR_PRESETS[7].value}20`,
-                    color: TAG_COLOR_PRESETS[7].value,
-                  }}
-                >
-                  {tag}
-                </span>
-              ))}
-              {getAggregatedTags('root').length === 0 && (
-                <p className="text-sm text-muted-foreground">No tags yet</p>
-              )}
-            </div>
-          </section>
+    if (selectedSystem) {
+      return (
+        <ItemMetadataPanel
+          itemType="system"
+          itemName={selectedSystem.name}
+          itemDescription={selectedSystem.description}
+          createdAt={selectedSystem.createdAt}
+          updatedAt={selectedSystem.updatedAt}
+          isBottomPanel={isBottom}
+          attachments={selectedSystem.attachments || []}
+          photos={selectedSystem.photos || []}
+          links={selectedSystem.links || []}
+          voiceRecordings={selectedSystem.voiceRecordings || []}
+          tags={selectedSystem.tags || []}
+          tagColors={selectedSystem.tagColors}
+          aggregatedTags={getAggregatedTags('system', selectedSystem.id)}
+          detailNotes={selectedSystem.detailNotes}
+          onAddAttachment={(att) => addSystemAttachment(selectedSystem.id, att)}
+          onRemoveAttachment={(attId) => removeSystemAttachment(selectedSystem.id, attId)}
+          onAddPhoto={(name, dataUrl) => addSystemPhoto(selectedSystem.id, name, dataUrl)}
+          onRemovePhoto={(photoId) => removeSystemPhoto(selectedSystem.id, photoId)}
+          onAddLink={(url, title) => addSystemLink(selectedSystem.id, url, title)}
+          onRemoveLink={(linkId) => removeSystemLink(selectedSystem.id, linkId)}
+          onUpdateLink={(linkId, updates) => updateSystemLink(selectedSystem.id, linkId, updates)}
+          onAddVoiceRecording={(name, dataUrl, duration) =>
+            addSystemVoiceRecording(selectedSystem.id, name, dataUrl, duration)
+          }
+          onRemoveVoiceRecording={(recId) => removeSystemVoiceRecording(selectedSystem.id, recId)}
+          onAddTag={(tag) => addSystemTag(selectedSystem.id, tag)}
+          onRemoveTag={(tag) => removeSystemTag(selectedSystem.id, tag)}
+          onUpdateDetailNotes={(notes) => updateSystemDetailNotes(selectedSystem.id, notes)}
+          onDelete={() => {
+            if (confirm(`Delete system "${selectedSystem.name}" and all its projects?`)) {
+              deleteSystem(selectedSystem.id);
+              setSelectedRowId(null);
+            }
+          }}
+        />
+      );
+    }
 
-          <section>
-            <h2 className="text-sm font-medium text-muted-foreground mb-2">Recent Notes</h2>
-            <div className="space-y-1">
-              {notes.slice(0, 5).map((note) => (
-                <div
-                  key={note.id}
-                  className="p-1.5 rounded bg-accent/30 hover:bg-accent/50 transition-colors"
-                >
-                  <p className="text-sm font-medium truncate">{note.title}</p>
-                  <p className="text-sm text-muted-foreground">{note.date}</p>
-                </div>
-              ))}
+    return (
+      <div className="p-4 space-y-4">
+        <section>
+          <h2 className="text-sm font-medium text-muted-foreground mb-2">Summary</h2>
+          <div className="space-y-1">
+            <div className="flex justify-between items-center p-1.5 rounded bg-accent/50">
+              <span className="text-sm">Total Systems</span>
+              <span className="text-sm font-medium">{systems.length}</span>
             </div>
-          </section>
-        </>
-      )}
+            <div className="flex justify-between items-center p-1.5 rounded bg-accent/50">
+              <span className="text-sm">Total Projects</span>
+              <span className="text-sm font-medium">
+                {systems.reduce((acc, s) => acc + s.projects.length, 0)}
+              </span>
+            </div>
+            <div className="flex justify-between items-center p-1.5 rounded bg-accent/50">
+              <span className="text-sm">Total Notes</span>
+              <span className="text-sm font-medium">{notes.length}</span>
+            </div>
+          </div>
+        </section>
 
-      {/* Quick Actions */}
-      <section>
-        <h2 className="text-sm font-medium text-muted-foreground mb-2">Quick Actions</h2>
-        <div className="space-y-1">
-          <Button variant="outline" className="w-full justify-start h-7 text-sm" size="sm" onClick={handleAddSystem}>
-            <Plus className="w-4 h-4 mr-2" />
-            New System
-          </Button>
-        </div>
-      </section>
-    </div>
-  );
+        <section>
+          <h2 className="text-sm font-medium text-muted-foreground mb-2">All Tags</h2>
+          <div className="flex flex-wrap gap-1">
+            {getAggregatedTags('root').map((tag) => (
+              <span
+                key={tag}
+                className="px-2 py-0.5 text-sm rounded-full"
+                style={{
+                  backgroundColor: `${TAG_COLOR_PRESETS[7].value}20`,
+                  color: TAG_COLOR_PRESETS[7].value,
+                }}
+              >
+                {tag}
+              </span>
+            ))}
+            {getAggregatedTags('root').length === 0 && (
+              <p className="text-sm text-muted-foreground">No tags yet</p>
+            )}
+          </div>
+        </section>
+
+        <section>
+          <h2 className="text-sm font-medium text-muted-foreground mb-2">Recent Notes</h2>
+          <div className="space-y-1">
+            {notes.slice(0, 5).map((note) => (
+              <div
+                key={note.id}
+                className="p-1.5 rounded bg-accent/30 hover:bg-accent/50 transition-colors"
+              >
+                <p className="text-sm font-medium truncate">{note.title}</p>
+                <p className="text-sm text-muted-foreground">{note.date}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* Quick Actions */}
+        <section>
+          <h2 className="text-sm font-medium text-muted-foreground mb-2">Quick Actions</h2>
+          <div className="space-y-1">
+            <Button variant="outline" className="w-full justify-start h-7 text-sm" size="sm" onClick={handleAddSystem}>
+              <Plus className="w-4 h-4 mr-2" />
+              New System
+            </Button>
+          </div>
+        </section>
+      </div>
+    );
+  };
 
   const renderMainContent = () => (
     <>
@@ -573,7 +590,10 @@ export const RootOverview = ({ onSystemSelect, onClose }: RootOverviewProps) => 
 
           {/* Right Panel - Summary */}
           {!sidebarCollapsed ? (
-            <div className="w-72 flex flex-col overflow-hidden bg-card">
+            <div
+              className="flex flex-col overflow-hidden bg-card relative"
+              style={{ width: `${sidebarWidth}px` }}
+            >
               <div className="h-10 border-b border-border flex items-center justify-between px-2">
                 <Button
                   variant="ghost"
@@ -596,6 +616,19 @@ export const RootOverview = ({ onSystemSelect, onClose }: RootOverviewProps) => 
               <ScrollArea className="flex-1">
                 {renderSidebarContent()}
               </ScrollArea>
+              {/* Resize handle */}
+              <div
+                className="absolute left-0 top-0 h-full w-1 cursor-col-resize hover:bg-primary/50 transition-colors group"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  setIsResizing(true);
+                  resizingStartRef.current = { x: e.clientX, width: sidebarWidth };
+                }}
+              >
+                <div className="absolute left-0 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <GripVertical className="w-3 h-3 text-primary" />
+                </div>
+              </div>
             </div>
           ) : (
             <div className="w-10 flex flex-col items-center pt-2 bg-card border-l border-border">
@@ -659,7 +692,10 @@ export const RootOverview = ({ onSystemSelect, onClose }: RootOverviewProps) => 
 
           {/* Bottom Panel - Summary */}
           {!sidebarCollapsed ? (
-            <div className="h-64 flex flex-col overflow-hidden bg-card resize-y">
+            <div
+              className="flex flex-col overflow-hidden bg-card relative"
+              style={{ height: `${sidebarWidth}px` }}
+            >
               <div className="h-10 border-b border-border flex items-center justify-between px-2">
                 <Button
                   variant="ghost"
@@ -682,6 +718,19 @@ export const RootOverview = ({ onSystemSelect, onClose }: RootOverviewProps) => 
               <ScrollArea className="flex-1">
                 {renderSidebarContent()}
               </ScrollArea>
+              {/* Resize handle */}
+              <div
+                className="absolute top-0 left-0 w-full h-1 cursor-row-resize hover:bg-primary/50 transition-colors group"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  setIsResizing(true);
+                  resizingStartRef.current = { x: e.clientY, width: sidebarWidth };
+                }}
+              >
+                <div className="absolute left-1/2 top-0 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <GripVertical className="w-3 h-3 text-primary rotate-90" />
+                </div>
+              </div>
             </div>
           ) : (
             <div className="h-10 flex items-center justify-center bg-card border-t border-border">

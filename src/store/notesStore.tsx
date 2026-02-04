@@ -2,7 +2,7 @@ import { createContext, useContext, ReactNode } from "react";
 import { useLocalStorage } from "@/hooks/useLocalStorage";
 
 // Types
-export type EditorType = "modular" | "standard" | "visual" | "typography";
+export type EditorType = "standard" | "modular" | "visual";
 
 export type HealthStatus = 'good' | 'warning' | 'critical';
 export type PriorityLevel = 'high' | 'medium' | 'low';
@@ -21,26 +21,32 @@ export interface TagWithColor {
   color: string;
 }
 
+// Primary color palette for tags and notes
 export const TAG_COLOR_PRESETS = [
-  { name: 'red', value: '#ef4444' },
-  { name: 'orange', value: '#f97316' },
-  { name: 'yellow', value: '#eab308' },
-  { name: 'green', value: '#22c55e' },
-  { name: 'blue', value: '#3b82f6' },
-  { name: 'purple', value: '#a855f7' },
-  { name: 'pink', value: '#ec4899' },
-  { name: 'gray', value: '#6b7280' },
+  { name: 'blue', value: '#49a0a2' },
+  { name: 'green', value: '#66a44c' },
+  { name: 'yellow', value: '#ffe32e' },
+  { name: 'red', value: '#ce4646' },
+  { name: 'orange', value: '#db8000' },
+  { name: 'purple', value: '#9437ff' },
+  { name: 'warm', value: '#d0d79d' },
+  { name: 'dark', value: '#121215' },
 ];
 
-export const EXPLORER_COLORS = [
-  { name: "blue", value: "#49a0a2" },
-  { name: "green", value: "#66a44c" },
-  { name: "yellow", value: "#ffe32e" },
-  { name: "red", value: "#ce4646" },
-  { name: "orange", value: "#db8000" },
-  { name: "purple", value: "#9437ff" },
-  { name: "gray", value: "#6b7280" },
-];
+// Alias for backward compatibility
+export const EXPLORER_COLORS = TAG_COLOR_PRESETS;
+
+// Inverse colors for light text on colored backgrounds
+export const TAG_COLOR_INVERSES: Record<string, string> = {
+  '#49a0a2': '#000000',  // blue
+  '#66a44c': '#000000',  // green
+  '#ffe32e': '#000000',  // yellow
+  '#ce4646': '#ffffff',  // red
+  '#db8000': '#000000',  // orange
+  '#9437ff': '#ffffff',  // purple
+  '#d0d79d': '#000000',  // warm
+  '#121215': '#ffffff',  // dark
+};
 
 export const EXPLORER_ICONS = ["folder", "star", "heart", "code", "book", "briefcase", "home", "music"];
 
@@ -80,6 +86,29 @@ export interface Attachment {
   mimeType?: string;
 }
 
+export interface Photo {
+  id: string;
+  name: string;
+  dataUrl: string;
+  addedAt: number;
+}
+
+export interface VoiceRecording {
+  id: string;
+  name: string;
+  dataUrl: string;
+  duration?: string;
+  addedAt: number;
+}
+
+export interface SavedLink {
+  id: string;
+  url: string;
+  title?: string;
+  autoExtracted?: boolean;
+  addedAt: number;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -87,6 +116,10 @@ export interface Project {
   tags?: string[];
   tagColors?: { [tagName: string]: string };
   attachments?: Attachment[];
+  photos?: Photo[];
+  voiceRecordings?: VoiceRecording[];
+  links?: SavedLink[];
+  detailNotes?: string;
   mentions?: string[]; // IDs of linked items
   reminders?: Reminder[];
   metrics?: ItemMetrics;
@@ -103,6 +136,10 @@ export interface System {
   tags?: string[];
   tagColors?: { [tagName: string]: string };
   attachments?: Attachment[];
+  photos?: Photo[];
+  voiceRecordings?: VoiceRecording[];
+  links?: SavedLink[];
+  detailNotes?: string;
   mentions?: string[]; // IDs of linked items
   reminders?: Reminder[];
   metrics?: ItemMetrics;
@@ -122,6 +159,8 @@ export interface Note {
   tagColors?: { [tagName: string]: string };
   favorite?: boolean;
   color?: string;
+  /** Custom icon to display on card, null = hidden, string = icon name */
+  icon?: string | null;
   systemId: string;
   projectId: string;
   editorType: EditorType;
@@ -180,6 +219,31 @@ interface NotesStore {
   removeSystemAttachment: (systemId: string, attachmentId: string) => void;
   addProjectAttachment: (systemId: string, projectId: string, attachment: Omit<Attachment, 'id' | 'createdAt'>) => void;
   removeProjectAttachment: (systemId: string, projectId: string, attachmentId: string) => void;
+  // Photo operations
+  addSystemPhoto: (systemId: string, name: string, dataUrl: string) => void;
+  removeSystemPhoto: (systemId: string, photoId: string) => void;
+  addProjectPhoto: (systemId: string, projectId: string, name: string, dataUrl: string) => void;
+  removeProjectPhoto: (systemId: string, projectId: string, photoId: string) => void;
+  // Voice recording operations
+  addSystemVoiceRecording: (systemId: string, name: string, dataUrl: string, duration?: string) => void;
+  removeSystemVoiceRecording: (systemId: string, recordingId: string) => void;
+  addProjectVoiceRecording: (systemId: string, projectId: string, name: string, dataUrl: string, duration?: string) => void;
+  removeProjectVoiceRecording: (systemId: string, projectId: string, recordingId: string) => void;
+  // Link operations
+  addSystemLink: (systemId: string, url: string, title?: string) => void;
+  removeSystemLink: (systemId: string, linkId: string) => void;
+  updateSystemLink: (systemId: string, linkId: string, updates: Partial<SavedLink>) => void;
+  addProjectLink: (systemId: string, projectId: string, url: string, title?: string) => void;
+  removeProjectLink: (systemId: string, projectId: string, linkId: string) => void;
+  updateProjectLink: (systemId: string, projectId: string, linkId: string, updates: Partial<SavedLink>) => void;
+  // Detail notes operations
+  updateSystemDetailNotes: (systemId: string, notes: string) => void;
+  updateProjectDetailNotes: (systemId: string, projectId: string, notes: string) => void;
+  // Tag operations for system/project
+  addSystemTag: (systemId: string, tag: string) => void;
+  removeSystemTag: (systemId: string, tag: string) => void;
+  addProjectTag: (systemId: string, projectId: string, tag: string) => void;
+  removeProjectTag: (systemId: string, projectId: string, tag: string) => void;
 }
 
 // Default data
@@ -296,7 +360,7 @@ const defaultNotes: Note[] = [
     color: "accent",
     systemId: "system-1",
     projectId: "project-2",
-    editorType: "typography",
+    editorType: "standard",
     content: "",
     createdAt: Date.now() - 7200000,
     updatedAt: Date.now() - 7200000,
@@ -446,7 +510,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
           { id: generateId(), type: "start", label: "Start", x: 200, y: 100 },
         ];
         break;
-      case "typography":
+      case "standard":
         defaultContent = "";
         break;
       case "modular":
@@ -860,6 +924,151 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     }));
   };
 
+  // Photo operations
+  const addSystemPhoto = (systemId: string, name: string, dataUrl: string) => {
+    const newPhoto: Photo = { id: crypto.randomUUID(), name, dataUrl, addedAt: Date.now() };
+    setSystems(systems.map(s => s.id !== systemId ? s : { ...s, photos: [...(s.photos || []), newPhoto], updatedAt: Date.now() }));
+  };
+
+  const removeSystemPhoto = (systemId: string, photoId: string) => {
+    setSystems(systems.map(s => s.id !== systemId ? s : { ...s, photos: (s.photos || []).filter(p => p.id !== photoId), updatedAt: Date.now() }));
+  };
+
+  const addProjectPhoto = (systemId: string, projectId: string, name: string, dataUrl: string) => {
+    const newPhoto: Photo = { id: crypto.randomUUID(), name, dataUrl, addedAt: Date.now() };
+    setSystems(systems.map(s => s.id !== systemId ? s : {
+      ...s,
+      projects: s.projects.map(p => p.id !== projectId ? p : { ...p, photos: [...(p.photos || []), newPhoto], updatedAt: Date.now() }),
+    }));
+  };
+
+  const removeProjectPhoto = (systemId: string, projectId: string, photoId: string) => {
+    setSystems(systems.map(s => s.id !== systemId ? s : {
+      ...s,
+      projects: s.projects.map(p => p.id !== projectId ? p : { ...p, photos: (p.photos || []).filter(ph => ph.id !== photoId), updatedAt: Date.now() }),
+    }));
+  };
+
+  // Voice recording operations
+  const addSystemVoiceRecording = (systemId: string, name: string, dataUrl: string, duration?: string) => {
+    const newRec: VoiceRecording = { id: crypto.randomUUID(), name, dataUrl, duration, addedAt: Date.now() };
+    setSystems(systems.map(s => s.id !== systemId ? s : { ...s, voiceRecordings: [...(s.voiceRecordings || []), newRec], updatedAt: Date.now() }));
+  };
+
+  const removeSystemVoiceRecording = (systemId: string, recordingId: string) => {
+    setSystems(systems.map(s => s.id !== systemId ? s : { ...s, voiceRecordings: (s.voiceRecordings || []).filter(r => r.id !== recordingId), updatedAt: Date.now() }));
+  };
+
+  const addProjectVoiceRecording = (systemId: string, projectId: string, name: string, dataUrl: string, duration?: string) => {
+    const newRec: VoiceRecording = { id: crypto.randomUUID(), name, dataUrl, duration, addedAt: Date.now() };
+    setSystems(systems.map(s => s.id !== systemId ? s : {
+      ...s,
+      projects: s.projects.map(p => p.id !== projectId ? p : { ...p, voiceRecordings: [...(p.voiceRecordings || []), newRec], updatedAt: Date.now() }),
+    }));
+  };
+
+  const removeProjectVoiceRecording = (systemId: string, projectId: string, recordingId: string) => {
+    setSystems(systems.map(s => s.id !== systemId ? s : {
+      ...s,
+      projects: s.projects.map(p => p.id !== projectId ? p : { ...p, voiceRecordings: (p.voiceRecordings || []).filter(r => r.id !== recordingId), updatedAt: Date.now() }),
+    }));
+  };
+
+  // Link operations
+  const addSystemLink = (systemId: string, url: string, title?: string) => {
+    const newLink: SavedLink = { id: crypto.randomUUID(), url, title, addedAt: Date.now() };
+    setSystems(systems.map(s => s.id !== systemId ? s : { ...s, links: [...(s.links || []), newLink], updatedAt: Date.now() }));
+  };
+
+  const removeSystemLink = (systemId: string, linkId: string) => {
+    setSystems(systems.map(s => s.id !== systemId ? s : { ...s, links: (s.links || []).filter(l => l.id !== linkId), updatedAt: Date.now() }));
+  };
+
+  const updateSystemLink = (systemId: string, linkId: string, updates: Partial<SavedLink>) => {
+    setSystems(systems.map(s => s.id !== systemId ? s : {
+      ...s,
+      links: (s.links || []).map(l => l.id !== linkId ? l : { ...l, ...updates }),
+      updatedAt: Date.now(),
+    }));
+  };
+
+  const addProjectLink = (systemId: string, projectId: string, url: string, title?: string) => {
+    const newLink: SavedLink = { id: crypto.randomUUID(), url, title, addedAt: Date.now() };
+    setSystems(systems.map(s => s.id !== systemId ? s : {
+      ...s,
+      projects: s.projects.map(p => p.id !== projectId ? p : { ...p, links: [...(p.links || []), newLink], updatedAt: Date.now() }),
+    }));
+  };
+
+  const removeProjectLink = (systemId: string, projectId: string, linkId: string) => {
+    setSystems(systems.map(s => s.id !== systemId ? s : {
+      ...s,
+      projects: s.projects.map(p => p.id !== projectId ? p : { ...p, links: (p.links || []).filter(l => l.id !== linkId), updatedAt: Date.now() }),
+    }));
+  };
+
+  const updateProjectLink = (systemId: string, projectId: string, linkId: string, updates: Partial<SavedLink>) => {
+    setSystems(systems.map(s => s.id !== systemId ? s : {
+      ...s,
+      projects: s.projects.map(p => p.id !== projectId ? p : {
+        ...p,
+        links: (p.links || []).map(l => l.id !== linkId ? l : { ...l, ...updates }),
+        updatedAt: Date.now(),
+      }),
+    }));
+  };
+
+  // Detail notes operations
+  const updateSystemDetailNotes = (systemId: string, notes: string) => {
+    setSystems(systems.map(s => s.id !== systemId ? s : { ...s, detailNotes: notes, updatedAt: Date.now() }));
+  };
+
+  const updateProjectDetailNotes = (systemId: string, projectId: string, notes: string) => {
+    setSystems(systems.map(s => s.id !== systemId ? s : {
+      ...s,
+      projects: s.projects.map(p => p.id !== projectId ? p : { ...p, detailNotes: notes, updatedAt: Date.now() }),
+    }));
+  };
+
+  // Tag operations for system/project
+  const addSystemTag = (systemId: string, tag: string) => {
+    setSystems(systems.map(s => s.id !== systemId ? s : {
+      ...s,
+      tags: [...new Set([...(s.tags || []), tag.toLowerCase()])],
+      updatedAt: Date.now(),
+    }));
+  };
+
+  const removeSystemTag = (systemId: string, tag: string) => {
+    setSystems(systems.map(s => s.id !== systemId ? s : {
+      ...s,
+      tags: (s.tags || []).filter(t => t !== tag),
+      updatedAt: Date.now(),
+    }));
+  };
+
+  const addProjectTag = (systemId: string, projectId: string, tag: string) => {
+    setSystems(systems.map(s => s.id !== systemId ? s : {
+      ...s,
+      projects: s.projects.map(p => p.id !== projectId ? p : {
+        ...p,
+        tags: [...new Set([...(p.tags || []), tag.toLowerCase()])],
+        updatedAt: Date.now(),
+      }),
+    }));
+  };
+
+  const removeProjectTag = (systemId: string, projectId: string, tag: string) => {
+    setSystems(systems.map(s => s.id !== systemId ? s : {
+      ...s,
+      projects: s.projects.map(p => p.id !== projectId ? p : {
+        ...p,
+        tags: (p.tags || []).filter(t => t !== tag),
+        updatedAt: Date.now(),
+      }),
+    }));
+  };
+
   const store: NotesStore = {
     systems,
     notes,
@@ -899,6 +1108,26 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     removeSystemAttachment,
     addProjectAttachment,
     removeProjectAttachment,
+    addSystemPhoto,
+    removeSystemPhoto,
+    addProjectPhoto,
+    removeProjectPhoto,
+    addSystemVoiceRecording,
+    removeSystemVoiceRecording,
+    addProjectVoiceRecording,
+    removeProjectVoiceRecording,
+    addSystemLink,
+    removeSystemLink,
+    updateSystemLink,
+    addProjectLink,
+    removeProjectLink,
+    updateProjectLink,
+    updateSystemDetailNotes,
+    updateProjectDetailNotes,
+    addSystemTag,
+    removeSystemTag,
+    addProjectTag,
+    removeProjectTag,
   };
 
   return (

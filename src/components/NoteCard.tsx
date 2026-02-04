@@ -1,6 +1,9 @@
 import { useState, useRef, useEffect } from "react";
 import { cn } from "@/lib/utils";
-import { RotateCcw, Star, Calendar, Paperclip, Image as ImageIcon, FileText, Pencil, Trash2, Circle } from "lucide-react";
+import {
+  RotateCcw, Star, Calendar, Paperclip, Image as ImageIcon, FileText, Pencil, Trash2, Circle,
+  Target, Lightbulb, CheckCircle, Bookmark, Heart, Flag, Tag as TagIcon
+} from "lucide-react";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -32,11 +35,25 @@ interface Note {
   tags: string[];
   favorite?: boolean;
   color?: string;
+  /** Custom icon to display on card, null = hidden, string = icon name */
+  icon?: string | null;
   createdAt: number;
   updatedAt: number;
   attachments?: { [filename: string]: string };
   photos?: { id: string; name: string; dataUrl: string; addedAt: number }[];
 }
+
+// Icon options for the picker
+const ICON_OPTIONS = [
+  { name: "Note", icon: FileText, key: "note" },
+  { name: "Target", icon: Target, key: "target" },
+  { name: "Star", icon: Star, key: "star" },
+  { name: "Lightbulb", icon: Lightbulb, key: "lightbulb" },
+  { name: "Check", icon: CheckCircle, key: "check" },
+  { name: "Bookmark", icon: Bookmark, key: "bookmark" },
+  { name: "Heart", icon: Heart, key: "heart" },
+  { name: "Flag", icon: Flag, key: "flag" },
+];
 
 interface NoteCardProps {
   note: Note;
@@ -46,9 +63,10 @@ interface NoteCardProps {
   onRename?: (id: string, newTitle: string) => void;
   onDelete?: (id: string) => void;
   onColorChange?: (id: string, color: string) => void;
+  onIconChange?: (id: string, icon: string | null) => void;
 }
 
-export const NoteCard = ({ note, selectedNoteId, onSelect, onFlip, onRename, onDelete, onColorChange }: NoteCardProps) => {
+export const NoteCard = ({ note, selectedNoteId, onSelect, onFlip, onRename, onDelete, onColorChange, onIconChange }: NoteCardProps) => {
   const [isFlipped, setIsFlipped] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(note.title);
@@ -95,6 +113,17 @@ export const NoteCard = ({ note, selectedNoteId, onSelect, onFlip, onRename, onD
     onFlip?.(newFlipped, newFlipped ? note.id : undefined);
   };
 
+  // Helper to render icon by key
+  const renderIconByKey = (key: string) => {
+    const option = ICON_OPTIONS.find(o => o.key === key);
+    if (!option) return null;
+    const IconComponent = option.icon;
+    return <IconComponent className="w-4 h-4" />;
+  };
+
+  // Get the current icon to display
+  const displayIcon = note.icon ? renderIconByKey(note.icon) : null;
+
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
@@ -123,9 +152,14 @@ export const NoteCard = ({ note, selectedNoteId, onSelect, onFlip, onRename, onD
               }}
             >
           <div className="flex items-start justify-between gap-2 mb-2">
-            <h3 className="text-sm font-medium text-foreground line-clamp-1">
-              {note.title}
-            </h3>
+            <div className="flex items-center gap-2 min-w-0">
+              {displayIcon && (
+                <span className="text-muted-foreground shrink-0">{displayIcon}</span>
+              )}
+              <h3 className="text-sm font-medium text-foreground line-clamp-1">
+                {note.title}
+              </h3>
+            </div>
             <div className="flex items-center gap-1">
               {selectedNoteId === note.id && (
                 <div
@@ -295,6 +329,42 @@ export const NoteCard = ({ note, selectedNoteId, onSelect, onFlip, onRename, onD
               title={color.name}
             />
           ))}
+        </ContextMenuSubContent>
+      </ContextMenuSub>
+      <ContextMenuSub>
+        <ContextMenuSubTrigger className="gap-2 cursor-pointer">
+          {displayIcon || <Target className="w-3 h-3" />}
+          Change icon
+        </ContextMenuSubTrigger>
+        <ContextMenuSubContent className="grid grid-cols-4 gap-1 p-1.5">
+          {/* Hide icon option */}
+          <button
+            className={cn(
+              "w-6 h-6 rounded-md border-2 flex items-center justify-center transition-transform hover:scale-110",
+              note.icon === null ? "border-white" : "border-transparent"
+            )}
+            onClick={() => onIconChange?.(note.id, null)}
+            title="Hide icon"
+          >
+            <span className="text-xs">✕</span>
+          </button>
+          {/* Icon options */}
+          {ICON_OPTIONS.map((option) => {
+            const IconComponent = option.icon;
+            return (
+              <button
+                key={option.key}
+                className={cn(
+                  "w-6 h-6 rounded-md border-2 flex items-center justify-center transition-transform hover:scale-110",
+                  note.icon === option.key ? "border-white" : "border-transparent"
+                )}
+                onClick={() => onIconChange?.(note.id, option.key)}
+                title={option.name}
+              >
+                <IconComponent className="w-4 h-4" />
+              </button>
+            );
+          })}
         </ContextMenuSubContent>
       </ContextMenuSub>
       <ContextMenuSeparator />

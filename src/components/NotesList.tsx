@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Search, Plus, GripVertical, FileText, Network, Type, Boxes, X } from "lucide-react";
+import { Search, Plus, GripVertical, FileText, Network, Boxes, X } from "lucide-react";
 import { NoteCard } from "@/components/NoteCard";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -30,6 +30,10 @@ export const NotesList = ({ onNoteSelect, selectedNoteId, onCardFlip, filterSyst
 
   const handleColorChange = (id: string, color: string) => {
     updateNote(id, { color });
+  };
+
+  const handleIconChange = (id: string, icon: string | null) => {
+    updateNote(id, { icon });
   };
 
   const handleDelete = (id: string) => {
@@ -99,7 +103,7 @@ export const NotesList = ({ onNoteSelect, selectedNoteId, onCardFlip, filterSyst
              note.preview.toLowerCase().includes(searchQuery.toLowerCase());
     }
     return true;
-  });
+  }).sort((a, b) => b.updatedAt - a.updatedAt);
 
   const handleCreateNote = (type: EditorType) => {
     // Use current filter context, fallback to defaults
@@ -123,19 +127,9 @@ export const NotesList = ({ onNoteSelect, selectedNoteId, onCardFlip, filterSyst
             <DropdownMenuContent align="end" className="w-64 bg-background border-border z-50">
               <DropdownMenuItem
                 className="flex items-start gap-3 p-3 cursor-pointer"
-                onClick={() => handleCreateNote("modular")}
-              >
-                <Boxes className="w-5 h-5 text-primary mt-0.5" />
-                <div className="flex-1">
-                  <div className="font-medium text-xs">Modular</div>
-                  <div className="text-xs text-muted-foreground">Rearrangeable blocks</div>
-                </div>
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                className="flex items-start gap-3 p-3 cursor-pointer"
                 onClick={() => handleCreateNote("standard")}
               >
-                <FileText className="w-5 h-5 text-primary mt-0.5" />
+                <FileText className="w-4 h-4 text-foreground mt-0" />
                 <div className="flex-1">
                   <div className="font-medium text-xs">Standard</div>
                   <div className="text-xs text-muted-foreground">Markdown editor</div>
@@ -143,22 +137,22 @@ export const NotesList = ({ onNoteSelect, selectedNoteId, onCardFlip, filterSyst
               </DropdownMenuItem>
               <DropdownMenuItem
                 className="flex items-start gap-3 p-3 cursor-pointer"
-                onClick={() => handleCreateNote("visual")}
+                onClick={() => handleCreateNote("modular")}
               >
-                <Network className="w-5 h-5 text-primary mt-0.5" />
+                <Boxes className="w-4 h-4 text-foreground mt-0" />
                 <div className="flex-1">
-                  <div className="font-medium text-xs">Visual</div>
-                  <div className="text-xs text-muted-foreground">Node-based flowchart</div>
+                  <div className="font-medium text-xs">Modular</div>
+                  <div className="text-xs text-muted-foreground">Rearrangeable blocks</div>
                 </div>
               </DropdownMenuItem>
               <DropdownMenuItem
                 className="flex items-start gap-3 p-3 cursor-pointer"
-                onClick={() => handleCreateNote("typography")}
+                onClick={() => handleCreateNote("visual")}
               >
-                <Type className="w-5 h-5 text-primary mt-0.5" />
+                <Network className="w-4 h-4 text-foreground mt-0" />
                 <div className="flex-1">
-                  <div className="font-medium text-xs">Typography</div>
-                  <div className="text-xs text-muted-foreground">Text styles showcase</div>
+                  <div className="font-medium text-xs">Visual</div>
+                  <div className="text-xs text-muted-foreground">Node-based flowchart</div>
                 </div>
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -207,6 +201,7 @@ export const NotesList = ({ onNoteSelect, selectedNoteId, onCardFlip, filterSyst
               onRename={handleRename}
               onDelete={handleDelete}
               onColorChange={handleColorChange}
+              onIconChange={handleIconChange}
             />
           ))}
           {filteredNotes.length === 0 && (

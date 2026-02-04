@@ -214,7 +214,6 @@ const Index = () => {
 
     switch (currentEditorType) {
       case "standard":
-      case "typography":
         return (
           <UnifiedMarkdownEditor
             focusMode={focusMode}
@@ -332,6 +331,7 @@ const Index = () => {
           selectedNoteId={selectedNoteId}
           onSystemProjectSelect={handleSystemProjectSelect}
           onHierarchySelect={handleHierarchySelect}
+          overviewTarget={viewMode === 'overview' ? overviewTarget : null}
         />
       )}
 

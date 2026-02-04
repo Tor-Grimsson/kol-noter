@@ -2,49 +2,56 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Font Declarations */
-@font-face {
-  font-family: 'Right Grotesk Mono';
-  src: url('/fonts/RightGrotesk-Mono/PPRightGroteskMono-Medium.woff') format('woff');
-  font-weight: 500;
-}
-
+/* Font Declarations - JetBrains Mono is primary font */
 @font-face {
   font-family: 'JetBrains Mono';
   src: url('/fonts/Jetbrains-Mono/fonts/webfonts/JetBrainsMono-Regular.woff2') format('woff2');
   font-weight: 400;
+  font-style: normal;
 }
 
 @font-face {
   font-family: 'JetBrains Mono';
   src: url('/fonts/Jetbrains-Mono/fonts/webfonts/JetBrainsMono-Medium.woff2') format('woff2');
   font-weight: 500;
+  font-style: normal;
 }
 
 @font-face {
   font-family: 'JetBrains Mono';
   src: url('/fonts/Jetbrains-Mono/fonts/webfonts/JetBrainsMono-Bold.woff2') format('woff2');
   font-weight: 700;
+  font-style: normal;
 }
 
 @font-face {
-  font-family: 'Meslo LGS NF';
-  src: url('/fonts/Meslo-LGS-NF/ttf/MesloLGS NF Regular.ttf') format('truetype');
+  font-family: 'JetBrains Mono';
+  src: url('/fonts/Jetbrains-Mono/fonts/webfonts/JetBrainsMono-Italic.woff2') format('woff2');
   font-weight: 400;
+  font-style: italic;
 }
 
 @font-face {
-  font-family: 'Meslo LGS NF';
-  src: url('/fonts/Meslo-LGS-NF/ttf/MesloLGS NF Bold.ttf') format('truetype');
-  font-weight: 700;
+  font-family: 'JetBrains Mono';
+  src: url('/fonts/Jetbrains-Mono/fonts/webfonts/JetBrainsMono-MediumItalic.woff2') format('woff2');
+  font-weight: 500;
+  font-style: italic;
 }
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here.
-All colors MUST be HSL.
-*/
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('/fonts/Jetbrains-Mono/fonts/webfonts/JetBrainsMono-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+}
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. */
 
 @layer base {
   :root {
+    /* Primary Font - JetBrains Mono Medium */
+    --font-primary: 'JetBrains Mono', 'Meslo LGS NF', monospace;
+
     /* App Background - Deep dark */
     --background: 240 8% 7%;
     --foreground: 240 5% 96%;
@@ -68,10 +75,10 @@ All colors MUST be HSL.
     --list-item-hover: 240 5% 13%;
     --list-item-active: 240 6% 14%;
 
-    /* Primary - Yellow accent */
-    --primary: 44 91% 54%;
-    --primary-hover: 44 91% 60%;
-    --primary-foreground: 240 10% 5%;
+    /* Primary - White accent */
+    --primary: 0 0% 100%;
+    --primary-hover: 0 0% 90%;
+    --primary-foreground: 0 0% 0%;
 
     /* Secondary - Muted purple */
     --secondary: 240 5% 15%;
@@ -93,9 +100,9 @@ All colors MUST be HSL.
     --warning: 38 92% 50%;
     --warning-foreground: 240 10% 5%;
 
-    /* Destructive - For delete actions */
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 240 5% 96%;
+    /* Destructive - #ce4646 red */
+    --destructive: 0 59% 54%;
+    --destructive-foreground: 0 0% 100%;
 
     /* Inverse (light) surface for flipped cards/details */
     --surface-inverse: 0 0% 96%;
@@ -109,8 +116,9 @@ All colors MUST be HSL.
     --input: 240 6% 12%;
     --input-border: 240 6% 20%;
 
-    /* Focus ring */
-    --ring: 44 91% 54%;
+    /* Focus ring - White 15% */
+    --ring: 0 0% 100%;
+    --ring-opacity: 0.15;
 
     /* Popover */
     --popover: 240 6% 10%;
@@ -120,18 +128,18 @@ All colors MUST be HSL.
     --code-bg: 240 8% 8%;
     --code-border: 240 6% 14%;
 
-    /* Radius */
-    --radius: 0.5rem;
+    /* Radius - 4px only */
+    --radius: 0.25rem;
 
     /* Sidebar tokens */
     --sidebar-background: 240 10% 5%;
     --sidebar-foreground: 240 5% 82%;
-    --sidebar-primary: 44 91% 54%;
-    --sidebar-primary-foreground: 240 10% 5%;
+    --sidebar-primary: 0 0% 100%;
+    --sidebar-primary-foreground: 0 0% 0%;
     --sidebar-accent: 240 5% 12%;
     --sidebar-accent-foreground: 240 5% 96%;
     --sidebar-border: 240 6% 12%;
-    --sidebar-ring: 44 91% 54%;
+    --sidebar-ring: 0 0% 100%;
 
     /* Transitions */
     --transition-smooth: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
@@ -141,7 +149,7 @@ All colors MUST be HSL.
     --gradient-primary: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--primary-hover)) 100%);
     --gradient-accent: linear-gradient(135deg, hsl(var(--accent)) 0%, hsl(240 5% 22%) 100%);
     --gradient-subtle: linear-gradient(180deg, hsl(240 8% 9%) 0%, hsl(240 8% 7%) 100%);
-    
+
     /* Shadows */
     --shadow-sm: 0 1px 2px 0 hsl(240 10% 3% / 0.2);
     --shadow-md: 0 4px 6px -1px hsl(240 10% 3% / 0.3), 0 2px 4px -1px hsl(240 10% 3% / 0.2);
@@ -158,6 +166,37 @@ All colors MUST be HSL.
 
   body {
     @apply bg-background text-foreground;
+    font-family: var(--font-primary), monospace;
+  }
+
+  /* Apply JetBrains Mono to all text elements */
+  h1, h2, h3, h4, h5, h6,
+  p, span, div, a, button, input, textarea, select,
+  .text-xs, .text-sm, .text-base, .text-lg, .text-xl, .text-2xl, .text-3xl {
+    font-family: var(--font-primary), monospace;
+  }
+
+  /* Bold, italic, underline variants for JetBrains Mono */
+  .font-bold {
+    font-weight: 700;
+  }
+
+  .font-medium {
+    font-weight: 500;
+  }
+
+  .font-normal {
+    font-weight: 400;
+  }
+
+  .italic {
+    font-style: italic;
+  }
+
+  /* Focus ring with white 15% */
+  *:focus-visible {
+    outline: 2px solid hsl(var(--ring) / var(--ring-opacity, 0.15));
+    outline-offset: 2px;
   }
 }
 

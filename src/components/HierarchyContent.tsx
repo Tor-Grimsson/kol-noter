@@ -177,14 +177,6 @@ export const HierarchyContent = () => {
                 <p className="text-muted-foreground">For creating visual diagrams, flowcharts, and visual documentation.</p>
               </div>
             </div>
-
-            <div className="flex items-start gap-3 p-3 border rounded-lg">
-              <Badge className="bg-warning/10 text-warning">Typography</Badge>
-              <div className="flex-1 text-xs">
-                <p className="font-medium mb-1">Rich text formatting</p>
-                <p className="text-muted-foreground">Enhanced text styling with typography controls and formatting options.</p>
-              </div>
-            </div>
           </div>
         </CardContent>
       </Card>

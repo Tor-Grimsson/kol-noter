@@ -47,7 +47,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { UserProfile } from "./UserProfile";
-import { useNotesStore, EXPLORER_COLORS, EXPLORER_ICONS } from "@/store/notesStore";
+import { useNotesStore, EXPLORER_COLORS, EXPLORER_ICONS, EditorType } from "@/store/notesStore";
 
 interface Section {
   id: string;
@@ -93,11 +93,16 @@ export interface HierarchySelectInfo {
 
 interface UnifiedSidebarProps {
   collapsed?: boolean;
-  onNoteSelect: (noteId: string, type?: "modular" | "standard" | "visual" | "typography") => void;
+  onNoteSelect: (noteId: string, type?: EditorType) => void;
   selectedNoteId?: string;
   onWidthChange?: (width: number) => void;
   onSystemProjectSelect?: (systemId: string | "all", projectId?: string) => void;
   onHierarchySelect?: (info: HierarchySelectInfo) => void;
+  /** Sync target from overview - when set, highlights the corresponding item in sidebar */
+  overviewTarget?: {
+    level: 'root' | 'system' | 'project' | 'note';
+    id?: string;
+  } | null;
 }
 
 export const UnifiedSidebar = ({
@@ -106,7 +111,8 @@ export const UnifiedSidebar = ({
   selectedNoteId,
   onWidthChange,
   onSystemProjectSelect,
-  onHierarchySelect
+  onHierarchySelect,
+  overviewTarget = null,
 }: UnifiedSidebarProps) => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -167,6 +173,53 @@ export const UnifiedSidebar = ({
       editInputRef.current.select();
     }
   }, [editingId]);
+
+  // Sync overview target to sidebar selection and expand folders
+  useEffect(() => {
+    if (!overviewTarget) return;
+
+    const newExpanded = new Set(expandedItems);
+
+    if (overviewTarget.level === 'root') {
+      setSelectedSystemId("all");
+      setSelectedProjectId(undefined);
+      // Expand all systems and projects
+      storeSystems.forEach(s => {
+        newExpanded.add(s.id);
+        s.projects.forEach(p => newExpanded.add(p.id));
+      });
+    } else if (overviewTarget.level === 'system' && overviewTarget.id) {
+      setSelectedSystemId(overviewTarget.id);
+      setSelectedProjectId(undefined);
+      // Expand the system
+      newExpanded.add(overviewTarget.id);
+    } else if (overviewTarget.level === 'project' && overviewTarget.id) {
+      // Find the system that contains this project
+      const system = storeSystems.find(s =>
+        s.projects.some(p => p.id === overviewTarget.id)
+      );
+      if (system) {
+        setSelectedSystemId(system.id);
+        setSelectedProjectId(overviewTarget.id);
+        // Expand system and project
+        newExpanded.add(system.id);
+        newExpanded.add(overviewTarget.id);
+      }
+    } else if (overviewTarget.level === 'note' && overviewTarget.id) {
+      // Find and expand full path: system -> project
+      for (const system of storeSystems) {
+        for (const project of system.projects) {
+          if (project.notes.some(n => n.id === overviewTarget.id)) {
+            newExpanded.add(system.id);
+            newExpanded.add(project.id);
+            break;
+          }
+        }
+      }
+    }
+
+    setExpandedItems(newExpanded);
+  }, [overviewTarget, storeSystems]);
 
   // Build hierarchical data from store (System > Project > Notes > Pages > Sections)
   // For now, pages and sections are placeholders - can be extended later
