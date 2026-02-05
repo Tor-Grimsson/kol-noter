@@ -48,9 +48,10 @@
 
 ## Current State
 
-- **Status:** Initial setup, exploring codebase
-- **Last Session:** 2026-02-03
-- **Active Work:** Setting up LLM context system
+- **Status:** Implementing Local-First Markdown Architecture
+- **Last Session:** 2026-02-05
+- **Active Work:** Tauri integration (Phases 0-2 complete, 3-7 pending)
+- **Roadmap:** See `docs/roadmap/local-first-markdown-architecture.md`
 
 ## Data Hierarchy (Important)
 

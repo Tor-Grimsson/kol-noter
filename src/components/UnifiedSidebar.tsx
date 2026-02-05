@@ -48,6 +48,7 @@ import {
 } from "@/components/ui/context-menu";
 import { UserProfile } from "./UserProfile";
 import { useNotesStore, EXPLORER_COLORS, EXPLORER_ICONS, EditorType } from "@/store/notesStore";
+import { SidebarSkeleton } from "@/components/LoadingStates";
 
 interface Section {
   id: string;
@@ -131,6 +132,7 @@ export const UnifiedSidebar = ({
     deleteNote,
     updateSystemColorIcon,
     updateProjectColorIcon,
+    isLoading,
   } = useNotesStore();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedSystemId, setSelectedSystemId] = useState<string | "all">("all");
@@ -150,6 +152,11 @@ export const UnifiedSidebar = ({
   const MIN_WIDTH = 56; // Icon-only width
   const MAX_WIDTH = 480;
   const COLLAPSED_THRESHOLD = 100; // If dragged below this, treat as collapsed
+
+  // Show skeleton while loading
+  if (isLoading) {
+    return <SidebarSkeleton />;
+  }
 
   // Icon mapping for explorer items
   const getIconComponent = (iconName?: string, className?: string) => {

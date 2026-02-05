@@ -1,0 +1,67 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "KOL Noter",
+  "version": "0.1.0",
+  "identifier": "com.kolnoter.app",
+  "plugins": {
+    "fs": {
+      "requireLiteralLeadingDot": false
+    }
+  },
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:8080",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "KOL Noter",
+        "width": 1400,
+        "height": 900,
+        "minWidth": 800,
+        "minHeight": 600,
+        "resizable": true,
+        "fullscreen": false,
+        "center": true,
+        "decorations": true,
+        "transparent": false,
+        "dragDropEnabled": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["dmg", "app"],
+    "category": "Productivity",
+    "shortDescription": "Local-first markdown note-taking app",
+    "longDescription": "KOL Noter is a local-first markdown note-taking application with support for modular and visual editors, Obsidian-compatible vault structure, and full-text search.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "10.15",
+      "exceptionDomain": null,
+      "frameworks": [],
+      "entitlements": null
+    },
+    "publisher": "KOL Noter",
+    "copyright": "Copyright 2024 KOL Noter",
+    "fileAssociations": [
+      {
+        "ext": ["md", "markdown"],
+        "name": "Markdown Document",
+        "role": "Editor"
+      }
+    ]
+  }
+}

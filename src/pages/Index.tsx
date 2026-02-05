@@ -8,12 +8,14 @@ import { NoteDetailsView } from "@/components/NoteDetailsView";
 import { RootOverview, SystemOverview, ProjectOverview } from "@/components/overviews";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { NoteTabs } from "@/components/NoteTabs";
+import { StatusBar } from "@/components/StatusBar";
+import { PageLoader } from "@/components/LoadingStates";
 import { Button } from "@/components/ui/button";
 import { Eye, Moon, Folder, FolderX } from "lucide-react";
 import { useNotesStore, Block, VisualNode, EditorType } from "@/store/notesStore";
 
 const Index = () => {
-  const { systems, notes, getNote, updateNoteContent, updateNote, addNote, deleteNote, saveAttachment } = useNotesStore();
+  const { systems, notes, getNote, updateNoteContent, updateNote, addNote, deleteNote, saveAttachment, isLoading } = useNotesStore();
 
   const [selectedNoteId, setSelectedNoteId] = useState<string | undefined>(undefined);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -27,12 +29,6 @@ const Index = () => {
   const [viewMode, setViewMode] = useState<'editor' | 'overview'>('editor');
   const [overviewTarget, setOverviewTarget] = useState<HierarchySelectInfo | null>(null);
   const [previousOverviewTarget, setPreviousOverviewTarget] = useState<HierarchySelectInfo | null>(null);
-
-  // Handler to close overview and return to editor
-  const handleOverviewClose = () => {
-    setViewMode('editor');
-    setOverviewTarget(null);
-  };
 
   // Build tabs from notes in store
   const [openTabs, setOpenTabs] = useState(() => {
@@ -137,7 +133,7 @@ const Index = () => {
       const system = systems.find(s => s.id === selectedSystemId);
       if (system) {
         items.push({ label: system.name, href: `/systems/${system.id}` });
-        
+
         // Add project
         if (selectedProjectId) {
           const project = system.projects.find(p => p.id === selectedProjectId);
@@ -314,11 +310,23 @@ const Index = () => {
     return renderEditor();
   };
 
+  // Handler to close overview and return to editor
+  const handleOverviewClose = () => {
+    setViewMode('editor');
+    setOverviewTarget(null);
+  };
+
+  // Show loading state while data is loading
+  if (isLoading) {
+    return <PageLoader message="Loading your notes..." />;
+  }
+
   return (
-    <div 
-      className="flex h-screen w-full overflow-hidden bg-background text-foreground"
+    <div
+      className="flex flex-col h-screen w-full overflow-hidden bg-background text-foreground"
       style={invertColors ? { filter: 'invert(1) hue-rotate(180deg)' } : {}}
     >
+      <div className="flex flex-1 overflow-hidden">
       {!focusMode && (
         <UnifiedSidebar
           collapsed={sidebarCollapsed}
@@ -378,7 +386,7 @@ const Index = () => {
             <div className="flex-1 overflow-x-auto overflow-y-hidden scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
               <Breadcrumbs items={breadcrumbItems} />
             </div>
-          
+
           <div className="ml-auto flex items-center gap-2">
             <Button
               variant="ghost"
@@ -433,6 +441,10 @@ const Index = () => {
 
         {renderMainContent()}
       </div>
+      </div>
+
+      {/* Status Bar */}
+      {!focusMode && <StatusBar />}
     </div>
   );
 };

@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { useNotesStore, EditorType } from "@/store/notesStore";
+import { NotesListSkeleton } from "@/components/LoadingStates";
 
 interface NotesListProps {
   onNoteSelect: (noteId: string, type?: EditorType) => void;
@@ -22,7 +23,7 @@ interface NotesListProps {
 }
 
 export const NotesList = ({ onNoteSelect, selectedNoteId, onCardFlip, filterSystemId = "all", filterProjectId }: NotesListProps) => {
-  const { notes, addNote, updateNote, deleteNote } = useNotesStore();
+  const { notes, addNote, updateNote, deleteNote, isLoading } = useNotesStore();
 
   const handleRename = (id: string, newTitle: string) => {
     updateNote(id, { title: newTitle });
@@ -112,6 +113,11 @@ export const NotesList = ({ onNoteSelect, selectedNoteId, onCardFlip, filterSyst
     const newNote = addNote(systemId, projectId, type);
     onNoteSelect(newNote.id, type);
   };
+
+  // Show skeleton while loading
+  if (isLoading) {
+    return <NotesListSkeleton count={5} />;
+  }
 
   return (
     <div className="border-r border-border bg-list-bg flex flex-col relative" style={{ width: `${width}px` }}>
