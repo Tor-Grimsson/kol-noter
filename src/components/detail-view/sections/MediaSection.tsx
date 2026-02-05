@@ -122,10 +122,11 @@ export function MediaSection({
 
   if (isBottomPanel) {
     return (
-      <div className={cn("space-y-3", className)}>
+      <div className={cn("space-y-4", className)}>
+        <h2 className="text-[16px] font-medium">Media</h2>
         {/* Files */}
         {onAddAttachment && (
-          <section>
+          <section className="space-y-2">
             <SectionHeader
               title={`Files (${attachments.length})`}
               icon={<Paperclip className={ICON_SIZE} />}
@@ -146,7 +147,7 @@ export function MediaSection({
               onChange={(e) => handleFileUpload(e, "attachment")}
             />
             {attachments.length > 0 ? (
-              <div className="space-y-1 mt-1">
+              <div className="space-y-1">
                 {attachments.map((att) => (
                   <MediaItem
                     key={att.id}
@@ -161,14 +162,14 @@ export function MediaSection({
                 ))}
               </div>
             ) : (
-              <p className="text-xs text-muted-foreground mt-1">No files</p>
+              <p className="text-xs text-muted-foreground">No files</p>
             )}
           </section>
         )}
 
         {/* Photos */}
         {onAddPhoto && (
-          <section>
+          <section className="space-y-2">
             <SectionHeader
               title={`Photos (${photos.length})`}
               icon={<ImageIcon className={ICON_SIZE} />}
@@ -190,13 +191,14 @@ export function MediaSection({
               onChange={(e) => handleFileUpload(e, "photo")}
             />
             {photos.length > 0 ? (
-              <div className="grid grid-cols-3 gap-x-4 gap-y-3 mt-1">
+              <div className="grid grid-cols-2 gap-x-4 gap-y-2 mt-1">
                 {photos.map((photo) => (
                   <MediaItem
                     key={photo.id}
                     type="image"
                     name={photo.name}
                     url={photo.dataUrl}
+                    compact
                     onDownload={() => handleDownload(photo.dataUrl, photo.name)}
                     onDelete={onRemovePhoto ? () => onRemovePhoto(photo.id) : undefined}
                   />
@@ -311,11 +313,12 @@ export function MediaSection({
                 <button
                   onClick={() => setShowPhotoPreview(!showPhotoPreview)}
                   className="p-1 hover:bg-white/5 rounded"
+                  title={showPhotoPreview ? "Show file list" : "Show preview"}
                 >
                   {showPhotoPreview ? (
                     <EyeOff className="w-3 h-3 text-muted-foreground" />
                   ) : (
-                    <ImageIcon className="w-3 h-3 text-muted-foreground" />
+                    <Eye className="w-3 h-3 text-muted-foreground" />
                   )}
                 </button>
                 <Badge
@@ -337,7 +340,7 @@ export function MediaSection({
           />
           {photos.length > 0 ? (
             showPhotoPreview ? (
-              <div className="grid grid-cols-3 gap-x-4 gap-y-3 mt-2">
+              <div className="grid grid-cols-2 gap-x-4 gap-y-2 mt-2">
                 {photos.map((photo) => (
                   <ImageThumbnail
                     key={photo.id}
@@ -350,13 +353,14 @@ export function MediaSection({
                 ))}
               </div>
             ) : (
-              <div className="space-y-2 mt-2">
+              <div className="grid grid-cols-2 gap-x-4 gap-y-2 mt-2">
                 {photos.map((photo) => (
                   <MediaItem
                     key={photo.id}
                     type="image"
                     name={photo.name}
                     url={photo.dataUrl}
+                    compact
                     onDownload={() => handleDownload(photo.dataUrl, photo.name)}
                     onDelete={onRemovePhoto ? () => onRemovePhoto(photo.id) : undefined}
                   />

@@ -93,6 +93,61 @@ export const SystemOverview = ({ systemId, onProjectSelect, onRootSelect, onClos
     }
   }, [isEditingDescription]);
 
+  // Column resize handling
+  useEffect(() => {
+    if (!resizingColumn) return;
+
+    const handleResizeMove = (e: MouseEvent) => {
+      const diff = e.clientX - startXRef.current;
+      const newWidth = Math.max(80, startWidthRef.current + diff);
+
+      setColumns(cols =>
+        cols.map(col =>
+          col.id === resizingColumn ? { ...col, width: newWidth } : col
+        )
+      );
+    };
+
+    const handleResizeEnd = () => {
+      setResizingColumn(null);
+    };
+
+    document.addEventListener('mousemove', handleResizeMove);
+    document.addEventListener('mouseup', handleResizeEnd);
+
+    return () => {
+      document.removeEventListener('mousemove', handleResizeMove);
+      document.removeEventListener('mouseup', handleResizeEnd);
+    };
+  }, [resizingColumn]);
+
+  // Sidebar resize handling
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleResizeMove = (e: MouseEvent) => {
+      const diff = sidebarPosition === 'right'
+        ? e.clientX - resizingStartRef.current.x
+        : resizingStartRef.current.x - e.clientX;
+      let newWidth = resizingStartRef.current.width + diff;
+
+      newWidth = Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, newWidth));
+      setSidebarWidth(newWidth);
+    };
+
+    const handleResizeEnd = () => {
+      setIsResizing(false);
+    };
+
+    document.addEventListener('mousemove', handleResizeMove);
+    document.addEventListener('mouseup', handleResizeEnd);
+
+    return () => {
+      document.removeEventListener('mousemove', handleResizeMove);
+      document.removeEventListener('mouseup', handleResizeEnd);
+    };
+  }, [isResizing, sidebarPosition, setSidebarWidth]);
+
   if (!system) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -130,60 +185,6 @@ export const SystemOverview = ({ systemId, onProjectSelect, onRootSelect, onClos
       startWidthRef.current = column.width;
     }
   };
-
-  useEffect(() => {
-    if (!resizingColumn) return;
-
-    const handleResizeMove = (e: MouseEvent) => {
-      const diff = e.clientX - startXRef.current;
-      const newWidth = Math.max(80, startWidthRef.current + diff);
-
-      setColumns(cols =>
-        cols.map(col =>
-          col.id === resizingColumn ? { ...col, width: newWidth } : col
-        )
-      );
-    };
-
-    const handleResizeEnd = () => {
-      setResizingColumn(null);
-    };
-
-    document.addEventListener('mousemove', handleResizeMove);
-    document.addEventListener('mouseup', handleResizeEnd);
-
-    return () => {
-      document.removeEventListener('mousemove', handleResizeMove);
-      document.removeEventListener('mouseup', handleResizeEnd);
-    };
-  }, [resizingColumn]);
-
-  // Sidebar resize handling
-  useEffect(() => {
-    if (!isResizing) return;
-
-    const handleResizeMove = (e: MouseEvent) => {
-      const diff = sidebarPosition === 'right'
-        ? e.clientX - resizingStartRef.current.x
-        : resizingStartRef.current.x - e.clientY;
-      let newWidth = resizingStartRef.current.width + diff;
-
-      newWidth = Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, newWidth));
-      setSidebarWidth(newWidth);
-    };
-
-    const handleResizeEnd = () => {
-      setIsResizing(false);
-    };
-
-    document.addEventListener('mousemove', handleResizeMove);
-    document.addEventListener('mouseup', handleResizeEnd);
-
-    return () => {
-      document.removeEventListener('mousemove', handleResizeMove);
-      document.removeEventListener('mouseup', handleResizeEnd);
-    };
-  }, [isResizing, sidebarPosition]);
 
   const handleDescriptionSave = () => {
     updateSystemMetadata(systemId, { description: editDescription });

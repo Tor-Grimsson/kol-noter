@@ -168,6 +168,11 @@ export interface Note {
   attachments?: {
     [filename: string]: string; // filename -> base64 data URL
   };
+  photos?: Photo[];
+  voiceRecordings?: VoiceRecording[];
+  links?: SavedLink[];
+  customType?: string;
+  detailNotes?: string;
   metrics?: ItemMetrics;
   createdAt: number;
   updatedAt: number;
@@ -244,6 +249,19 @@ interface NotesStore {
   removeSystemTag: (systemId: string, tag: string) => void;
   addProjectTag: (systemId: string, projectId: string, tag: string) => void;
   removeProjectTag: (systemId: string, projectId: string, tag: string) => void;
+  // Note-specific operations
+  addNotePhoto: (noteId: string, name: string, dataUrl: string) => void;
+  removeNotePhoto: (noteId: string, photoId: string) => void;
+  addNoteVoiceRecording: (noteId: string, name: string, dataUrl: string, duration?: string) => void;
+  removeNoteVoiceRecording: (noteId: string, recordingId: string) => void;
+  addNoteLink: (noteId: string, url: string, title?: string) => void;
+  removeNoteLink: (noteId: string, linkId: string) => void;
+  updateNoteLink: (noteId: string, linkId: string, updates: Partial<SavedLink>) => void;
+  addNoteTag: (noteId: string, tag: string) => void;
+  removeNoteTag: (noteId: string, tag: string) => void;
+  renameNoteTag: (noteId: string, oldTag: string, newTag: string) => void;
+  updateNoteCustomType: (noteId: string, customType: string) => void;
+  updateNoteDetailNotes: (noteId: string, detailNotes: string) => void;
 }
 
 // Default data
@@ -509,9 +527,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         defaultContent = [
           { id: generateId(), type: "start", label: "Start", x: 200, y: 100 },
         ];
-        break;
-      case "standard":
-        defaultContent = "";
         break;
       case "modular":
       default:
@@ -1069,6 +1084,79 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     }));
   };
 
+  // Note-specific operations
+  const addNotePhoto = (noteId: string, name: string, dataUrl: string) => {
+    const newPhoto: Photo = { id: crypto.randomUUID(), name, dataUrl, addedAt: Date.now() };
+    setNotes(notes.map(n => n.id !== noteId ? n : { ...n, photos: [...(n.photos || []), newPhoto], updatedAt: Date.now() }));
+  };
+
+  const removeNotePhoto = (noteId: string, photoId: string) => {
+    setNotes(notes.map(n => n.id !== noteId ? n : { ...n, photos: (n.photos || []).filter(p => p.id !== photoId), updatedAt: Date.now() }));
+  };
+
+  const addNoteVoiceRecording = (noteId: string, name: string, dataUrl: string, duration?: string) => {
+    const newRec: VoiceRecording = { id: crypto.randomUUID(), name, dataUrl, duration, addedAt: Date.now() };
+    setNotes(notes.map(n => n.id !== noteId ? n : { ...n, voiceRecordings: [...(n.voiceRecordings || []), newRec], updatedAt: Date.now() }));
+  };
+
+  const removeNoteVoiceRecording = (noteId: string, recordingId: string) => {
+    setNotes(notes.map(n => n.id !== noteId ? n : { ...n, voiceRecordings: (n.voiceRecordings || []).filter(r => r.id !== recordingId), updatedAt: Date.now() }));
+  };
+
+  const addNoteLink = (noteId: string, url: string, title?: string) => {
+    const newLink: SavedLink = { id: crypto.randomUUID(), url, title, addedAt: Date.now() };
+    setNotes(notes.map(n => n.id !== noteId ? n : { ...n, links: [...(n.links || []), newLink], updatedAt: Date.now() }));
+  };
+
+  const removeNoteLink = (noteId: string, linkId: string) => {
+    setNotes(notes.map(n => n.id !== noteId ? n : { ...n, links: (n.links || []).filter(l => l.id !== linkId), updatedAt: Date.now() }));
+  };
+
+  const updateNoteLink = (noteId: string, linkId: string, updates: Partial<SavedLink>) => {
+    setNotes(notes.map(n => n.id !== noteId ? n : {
+      ...n,
+      links: (n.links || []).map(l => l.id !== linkId ? l : { ...l, ...updates }),
+      updatedAt: Date.now(),
+    }));
+  };
+
+  const addNoteTag = (noteId: string, tag: string) => {
+    setNotes(notes.map(n => n.id !== noteId ? n : {
+      ...n,
+      tags: [...new Set([...(n.tags || []), tag.toLowerCase()])],
+      updatedAt: Date.now(),
+    }));
+  };
+
+  const removeNoteTag = (noteId: string, tag: string) => {
+    setNotes(notes.map(n => n.id !== noteId ? n : {
+      ...n,
+      tags: (n.tags || []).filter(t => t !== tag),
+      updatedAt: Date.now(),
+    }));
+  };
+
+  const renameNoteTag = (noteId: string, oldTag: string, newTag: string) => {
+    setNotes(notes.map(n => {
+      if (n.id !== noteId) return n;
+      const tags = (n.tags || []).map(t => t === oldTag ? newTag.toLowerCase() : t);
+      const tagColors = n.tagColors ? { ...n.tagColors } : {};
+      if (tagColors[oldTag]) {
+        tagColors[newTag.toLowerCase()] = tagColors[oldTag];
+        delete tagColors[oldTag];
+      }
+      return { ...n, tags: [...new Set(tags)], tagColors, updatedAt: Date.now() };
+    }));
+  };
+
+  const updateNoteCustomType = (noteId: string, customType: string) => {
+    setNotes(notes.map(n => n.id !== noteId ? n : { ...n, customType: customType || undefined, updatedAt: Date.now() }));
+  };
+
+  const updateNoteDetailNotes = (noteId: string, detailNotes: string) => {
+    setNotes(notes.map(n => n.id !== noteId ? n : { ...n, detailNotes, updatedAt: Date.now() }));
+  };
+
   const store: NotesStore = {
     systems,
     notes,
@@ -1128,6 +1216,18 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     removeSystemTag,
     addProjectTag,
     removeProjectTag,
+    addNotePhoto,
+    removeNotePhoto,
+    addNoteVoiceRecording,
+    removeNoteVoiceRecording,
+    addNoteLink,
+    removeNoteLink,
+    updateNoteLink,
+    addNoteTag,
+    removeNoteTag,
+    renameNoteTag,
+    updateNoteCustomType,
+    updateNoteDetailNotes,
   };
 
   return (

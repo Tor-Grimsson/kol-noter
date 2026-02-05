@@ -94,6 +94,25 @@
 
 ## Component Patterns
 
+### Fixed Height Rule
+All interactive elements align to **h-6 (24px)** height for visual consistency:
+- Inputs
+- Badges
+- Action buttons
+- Cells
+- Link items
+
+This creates a clean horizontal rhythm when elements appear on the same row.
+
+### Section Width
+Form sections and panels use `max-w-lg` (512px) for readable content width.
+
+```html
+<div class="max-w-lg space-y-4">
+  <!-- Section content -->
+</div>
+```
+
 ### Data Cell
 ```html
 <div class="bg-[#1e1e24] p-2 rounded-[4px]">
@@ -103,22 +122,73 @@
 ```
 
 ### Section Header
+SectionHeader component has built-in `mb-2` for spacing when content follows.
+
 ```html
-<div class="text-[10px] font-medium text-muted-foreground uppercase tracking-wide flex items-center justify-between">
-  <span class="flex items-center gap-1">
+<div class="text-[10px] font-medium text-muted-foreground uppercase tracking-wide flex items-center justify-between mb-2">
+  <span class="flex items-center gap-2">
     <Icon class="w-3 h-3" />
-    Title
+    TITLE
   </span>
-  <span class="text-muted-foreground">(count)</span>
+  <Badge variant="outline">Action</Badge>
 </div>
 ```
 
+**Stacking multiple headers**: Override margin with `className="mb-0"` and use `space-y-2`:
+```html
+<div class="space-y-2">
+  <SectionHeader title="Files" className="mb-0" />
+  <SectionHeader title="Photos" className="mb-0" />
+</div>
+```
+
+### Preview Toggle
+Use Eye/EyeOff icons to toggle between file list and image preview views.
+
+```html
+<button class="p-1 hover:bg-white/5 rounded" title="Show preview">
+  <Eye class="w-3 h-3 text-muted-foreground" />   <!-- Preview off -->
+  <EyeOff class="w-3 h-3 text-muted-foreground" /> <!-- Preview on -->
+</button>
+```
+
 ### Input Field
+Inputs have invisible borders by default - borders only appear on hover/focus for a cleaner look.
+
 ```html
 <input
   type="text"
-  class="h-8 px-2 rounded-[4px] bg-[#1e1e24] border border-white/10 text-xs text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-white/15"
+  class="h-6 px-2 rounded-[4px] bg-[#1e1e24] border border-transparent text-xs text-foreground placeholder:text-muted-foreground/50 hover:border-white/10 focus:outline-none focus:border-white/15"
 />
+```
+
+### Labeled Input
+Use `LabeledInput` component for form fields with labels.
+
+```html
+<div>
+  <label class="text-[10px] text-muted-foreground block mb-1">Label</label>
+  <input class="w-full h-6 px-2 rounded-[4px] bg-[#1e1e24] border border-transparent text-xs hover:border-white/10 focus:border-white/15" />
+</div>
+```
+
+### Textarea
+Same border behavior as inputs - transparent by default, visible on hover/focus.
+
+```html
+<textarea class="min-h-[80px] w-full rounded-[4px] bg-[#1e1e24] border border-transparent p-2 text-xs placeholder:text-muted-foreground/50 hover:border-white/10 focus:outline-none focus:border-white/15 resize-none" />
+```
+
+### Inline Add Pattern
+Input + Badge action button with `gap-x-4` spacing. Use `Badge variant="outline"` for add actions, not Button.
+
+```html
+<div class="flex items-end gap-x-4">
+  <LabeledInput label="Add Tag" ... class="flex-1" />
+  <Badge variant="outline" class="h-6 px-2 cursor-pointer hover:bg-white/5">
+    <Plus class="w-3 h-3 mr-1" />Add
+  </Badge>
+</div>
 ```
 
 ### Tag/Pill
@@ -139,11 +209,40 @@
 
 ### Link Item
 ```html
-<div class="flex items-center gap-2 p-1.5 rounded-[4px] bg-[#1e1e24] text-xs hover:bg-white/5 max-h-[16px]">
+<div class="flex items-center gap-2 h-6 px-2 rounded-[4px] bg-[#1e1e24] text-xs hover:bg-white/5">
   <LinkIcon class="w-3 h-3 shrink-0 text-muted-foreground" />
   <span class="truncate">link-url.com</span>
 </div>
 ```
+
+### Contact Card (Compact)
+Editable contact form with avatar, inline name/title, and detail fields.
+
+```html
+<div class="space-y-2">
+  <!-- Header: Avatar + Name/Title + Delete -->
+  <div class="flex items-center gap-2">
+    <div class="w-6 h-6 rounded-full bg-primary flex items-center justify-center text-[10px] font-medium text-black">
+      JD
+    </div>
+    <div class="flex flex-col min-w-0 flex-1">
+      <input class="text-xs font-medium bg-transparent border-none p-0" placeholder="Name" />
+      <input class="text-[10px] text-muted-foreground bg-transparent border-none p-0" placeholder="Title" />
+    </div>
+    <button class="p-1 hover:bg-white/10 rounded text-white/30 hover:text-white/50">
+      <X class="w-3 h-3" />
+    </button>
+  </div>
+  <!-- Detail fields -->
+  <div class="grid grid-cols-2 gap-x-4 gap-y-2">
+    <LabeledInput label="Email" ... />
+    <LabeledInput label="Phone" ... />
+    <LabeledInput label="Socials" ... class="col-span-2" />
+  </div>
+</div>
+```
+
+**Delete button style**: Use `text-white/30 hover:text-white/50`, not red, for subtle delete actions in compact views.
 
 ## Focus States
 
@@ -167,7 +266,8 @@ src/
 │   │   ├── atoms/          # Primitive components
 │   │   │   ├── Badge.tsx
 │   │   │   ├── Tag.tsx
-│   │   │   └── SectionHeader.tsx
+│   │   │   ├── SectionHeader.tsx
+│   │   │   └── LabeledInput.tsx
 │   │   └── molecules/       # Composite components
 │   │       ├── MediaItem.tsx
 │   │       └── ContactCard.tsx
@@ -188,3 +288,7 @@ src/
 4. **Radius**: 4px everywhere, full only for tags
 5. **Font**: JetBrains Mono everywhere
 6. **Focus**: White 15% ring, no yellow
+7. **Fixed height**: All interactive elements h-6 (24px) for alignment
+8. **Invisible borders**: Inputs/textareas use transparent borders, visible only on hover/focus
+9. **Section width**: max-w-lg (512px) for form content
+10. **Subtle actions**: Use white/30 for secondary delete buttons, not red

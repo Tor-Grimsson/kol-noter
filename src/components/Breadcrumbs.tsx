@@ -25,11 +25,11 @@ export const Breadcrumbs = ({ items }: BreadcrumbsProps) => {
           </BreadcrumbLink>
         </BreadcrumbItem>
         {items.map((item, index) => (
-          <>
-            <BreadcrumbSeparator key={`sep-${index}`} className="opacity-50">
+          <span key={`breadcrumb-${index}`} className="contents">
+            <BreadcrumbSeparator className="opacity-50">
               <ChevronRight className="w-3 h-3" />
             </BreadcrumbSeparator>
-            <BreadcrumbItem key={item.label}>
+            <BreadcrumbItem>
               {index === items.length - 1 ? (
                 <BreadcrumbPage className="font-medium">{item.label}</BreadcrumbPage>
               ) : (
@@ -38,7 +38,7 @@ export const Breadcrumbs = ({ items }: BreadcrumbsProps) => {
                 </BreadcrumbLink>
               )}
             </BreadcrumbItem>
-          </>
+          </span>
         ))}
       </BreadcrumbList>
     </Breadcrumb>

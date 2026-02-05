@@ -7,6 +7,8 @@ import {
   Download,
   Trash2,
   Edit2,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -42,6 +44,8 @@ export function MediaItem({
   compact = false,
   className,
 }: MediaItemProps) {
+  const [isPreview, setIsPreview] = React.useState(false);
+
   const formatSize = (bytes?: number) => {
     if (!bytes) return "";
     if (bytes < 1024) return `${bytes} B`;
@@ -62,6 +66,33 @@ export function MediaItem({
   }[type];
 
   if (compact) {
+    // Image preview state - square cell with image background
+    if (type === "image" && isPreview) {
+      return (
+        <div
+          className={cn(
+            "aspect-square rounded-[4px] bg-cover bg-center relative group",
+            className
+          )}
+          style={{ backgroundImage: `url(${url})` }}
+        >
+          <div className="absolute bottom-0 left-0 right-0 p-1.5 bg-gradient-to-t from-black/60 to-transparent">
+            <div className="flex items-center justify-between">
+              <span className="text-xs truncate text-white">{name}</span>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity"
+                onClick={() => setIsPreview(false)}
+              >
+                <EyeOff className="w-3 h-3" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div
         className={cn(
@@ -84,6 +115,16 @@ export function MediaItem({
           )}
         </div>
         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+          {type === "image" && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-5 w-5"
+              onClick={() => setIsPreview(true)}
+            >
+              <Eye className="w-3 h-3" />
+            </Button>
+          )}
           {type === "recording" && onPlay && (
             <Button
               variant="ghost"

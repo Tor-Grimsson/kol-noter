@@ -102,42 +102,7 @@ export const ProjectOverview = ({
     }
   }, [isEditingDescription]);
 
-  if (!system || !project) {
-    return (
-      <div className="flex-1 flex items-center justify-center">
-        <p className="text-muted-foreground">Project not found</p>
-      </div>
-    );
-  }
-
-  const getHealthColor = (health?: "good" | "warning" | "critical") => {
-    switch (health) {
-      case "good": return "text-success";
-      case "warning": return "text-warning";
-      case "critical": return "text-destructive";
-      default: return "text-muted-foreground";
-    }
-  };
-
-  const getPriorityBadge = (priority?: "low" | "medium" | "high") => {
-    const variants = {
-      low: "bg-muted text-muted-foreground",
-      medium: "bg-warning/20 text-warning",
-      high: "bg-destructive/20 text-destructive",
-    };
-    return priority ? variants[priority] : "bg-muted text-muted-foreground";
-  };
-
-  const handleResizeStart = (columnId: ColumnId, e: React.MouseEvent) => {
-    e.preventDefault();
-    setResizingColumn(columnId);
-    startXRef.current = e.clientX;
-    const column = columns.find(c => c.id === columnId);
-    if (column) {
-      startWidthRef.current = column.width;
-    }
-  };
-
+  // Column resize handling
   useEffect(() => {
     if (!resizingColumn) return;
 
@@ -190,7 +155,43 @@ export const ProjectOverview = ({
       document.removeEventListener('mousemove', handleResizeMove);
       document.removeEventListener('mouseup', handleResizeEnd);
     };
-  }, [isResizing, sidebarPosition]);
+  }, [isResizing, sidebarPosition, setSidebarWidth]);
+
+  if (!system || !project) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <p className="text-muted-foreground">Project not found</p>
+      </div>
+    );
+  }
+
+  const getHealthColor = (health?: "good" | "warning" | "critical") => {
+    switch (health) {
+      case "good": return "text-success";
+      case "warning": return "text-warning";
+      case "critical": return "text-destructive";
+      default: return "text-muted-foreground";
+    }
+  };
+
+  const getPriorityBadge = (priority?: "low" | "medium" | "high") => {
+    const variants = {
+      low: "bg-muted text-muted-foreground",
+      medium: "bg-warning/20 text-warning",
+      high: "bg-destructive/20 text-destructive",
+    };
+    return priority ? variants[priority] : "bg-muted text-muted-foreground";
+  };
+
+  const handleResizeStart = (columnId: ColumnId, e: React.MouseEvent) => {
+    e.preventDefault();
+    setResizingColumn(columnId);
+    startXRef.current = e.clientX;
+    const column = columns.find(c => c.id === columnId);
+    if (column) {
+      startWidthRef.current = column.width;
+    }
+  };
 
   const handleDescriptionSave = () => {
     updateProjectMetadata(systemId, projectId, { description: editDescription });

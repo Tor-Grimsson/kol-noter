@@ -87,50 +87,8 @@ export function MetadataSection({
   if (isBottomPanel) {
     return (
       <div className={cn("space-y-3", className)}>
-        {/* Name and Description - full width */}
-        <section>
-          {editingName ? (
-            <input
-              type="text"
-              value={tempName}
-              onChange={(e) => setTempName(e.target.value)}
-              onBlur={handleNameSubmit}
-              onKeyDown={(e) => e.key === "Enter" && handleNameSubmit()}
-              className={cn(PANEL_INPUT_CLASS, "font-medium mb-2")}
-              placeholder="Item name"
-              autoFocus
-            />
-          ) : (
-            <div
-              className="flex items-center gap-1 cursor-pointer hover:bg-white/5 rounded px-1 -mx-1 py-0.5 mb-2"
-              onClick={() => setEditingName(true)}
-            >
-              <h2 className="text-xs font-medium truncate">{name}</h2>
-            </div>
-          )}
-
-          {editingDescription ? (
-            <textarea
-              value={tempDescription}
-              onChange={(e) => setTempDescription(e.target.value)}
-              onBlur={handleDescriptionSubmit}
-              className={cn(PANEL_TEXTAREA_CLASS, "min-h-[60px]")}
-              placeholder="Add description..."
-              autoFocus
-            />
-          ) : (
-            <div
-              className="cursor-pointer hover:bg-white/5 rounded px-1 -mx-1 py-0.5"
-              onClick={() => setEditingDescription(true)}
-            >
-              {description ? (
-                <p className="text-xs text-muted-foreground line-clamp-2">{description}</p>
-              ) : (
-                <p className="text-xs text-muted-foreground/50 italic">Add description...</p>
-              )}
-            </div>
-          )}
-        </section>
+        {/* Section Header */}
+        <SectionHeader icon={<Calendar className="w-3 h-3" />} title="METADATA" />
 
         {/* 2-col grid for metadata fields */}
         <section className={cn(GRID_LAYOUT)}>

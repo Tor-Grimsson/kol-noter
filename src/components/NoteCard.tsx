@@ -136,10 +136,10 @@ export const NoteCard = ({ note, selectedNoteId, onSelect, onFlip, onRename, onD
             style={{ transformStyle: "preserve-3d" }}
           >
             {/* Front of card */}
-            <button
+            <div
               onClick={() => onSelect(note.id)}
               className={cn(
-                "w-full p-3 rounded-[4px] text-left transition-all group relative backface-hidden",
+                "w-full p-3 rounded-[4px] text-left transition-all group relative backface-hidden cursor-pointer",
                 "hover:bg-list-hover",
                 "border",
                 selectedNoteId === note.id
@@ -190,7 +190,7 @@ export const NoteCard = ({ note, selectedNoteId, onSelect, onFlip, onRename, onD
             </div>
             <span className="text-sm text-muted-foreground">{note.date}</span>
           </div>
-        </button>
+        </div>
 
             {/* Back of card */}
             <div

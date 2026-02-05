@@ -20,7 +20,7 @@ import {
 } from "../constants";
 
 // Panel-specific styles
-const PANEL_INPUT_CLASS = "h-6 px-2 rounded-[4px] bg-[#1e1e24] border border-transparent text-xs placeholder:text-muted-foreground/50 hover:border-white/10 focus:outline-none focus:border-white/15";
+const PANEL_INPUT_CLASS = "h-6 px-2 rounded-[4px] bg-[#1e1e24] border border-transparent text-xs text-foreground placeholder:text-muted-foreground/50 hover:border-white/10 focus:outline-none focus:border-white/15";
 const LINK_ITEM_CLASS = "flex items-center gap-2 h-6 px-2 rounded-[4px] bg-[#1e1e24] text-xs hover:bg-white/5";
 
 export interface ConnectionsSectionProps {
@@ -36,6 +36,7 @@ export interface ConnectionsSectionProps {
   onUpdateLink?: (linkId: string, updates: Partial<SavedLink>) => void;
   onAddContact?: (contact: Omit<Contact, "id">) => void;
   onRemoveContact?: (contactId: string) => void;
+  onUpdateContact?: (contactId: string, updates: Partial<Contact>) => void;
   /** Tags from child items - displayed read-only */
   aggregatedTags?: string[];
   isBottomPanel?: boolean;
@@ -55,6 +56,7 @@ export function ConnectionsSection({
   onUpdateLink,
   onAddContact,
   onRemoveContact,
+  onUpdateContact,
   aggregatedTags = [],
   isBottomPanel = false,
   className,
@@ -84,32 +86,33 @@ export function ConnectionsSection({
   if (isBottomPanel) {
     return (
       <div className={cn("space-y-4", className)}>
+        <h2 className="text-[16px] font-medium">Connections</h2>
         {/* Tags */}
         {onAddTag && (
           <section>
             <SectionHeader
               title={`Tags (${tags.length})`}
               icon={<Tag className={ICON_SIZE} />}
+              action={
+                <Badge
+                  variant="outline"
+                  className="h-6 px-2 cursor-pointer hover:bg-white/5"
+                  onClick={handleAddTag}
+                >
+                  <Plus className="w-3 h-3 mr-1" />Add
+                </Badge>
+              }
             />
-            <div className="flex gap-2">
-              <input
-                type="text"
-                placeholder="Add tag..."
-                value={newTagName}
-                onChange={(e) => setNewTagName(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleAddTag()}
-                className={PANEL_INPUT_CLASS}
-              />
-              <Badge
-                variant="outline"
-                className="h-6 px-2 cursor-pointer hover:bg-white/5"
-                onClick={handleAddTag}
-              >
-                <Plus className="w-3 h-3 mr-1" />Add
-              </Badge>
-            </div>
+            <input
+              type="text"
+              placeholder="Add tag..."
+              value={newTagName}
+              onChange={(e) => setNewTagName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleAddTag()}
+              className={cn(PANEL_INPUT_CLASS, "w-full mt-2")}
+            />
             {(tags.length > 0 || aggregatedTags.length > 0) && (
-              <div className="flex flex-wrap gap-1 mt-2">
+              <div className="flex flex-wrap gap-2 mt-2">
                 {tags.map((tag) => (
                   <TagComponent
                     key={tag}
@@ -155,12 +158,20 @@ export function ConnectionsSection({
                 </Badge>
               }
             />
+            <input
+              type="text"
+              placeholder="https://..."
+              value={newLinkUrl}
+              onChange={(e) => setNewLinkUrl(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleAddLink()}
+              className={cn(PANEL_INPUT_CLASS, "w-full mt-2")}
+            />
             {links.length > 0 && (
-              <div className="space-y-1 mt-2">
+              <div className="space-y-2 mt-2">
                 {links.map((link) => (
                   <div
                     key={link.id}
-                    className={LINK_ITEM_CLASS}
+                    className={cn(LINK_ITEM_CLASS, "group")}
                   >
                     <div className="flex items-center gap-2 min-w-0 flex-1">
                       <LinkIcon className={cn(ICON_SIZE, "shrink-0 text-muted-foreground")} />
@@ -171,7 +182,7 @@ export function ConnectionsSection({
                           onChange={(e) => onUpdateLink?.(link.id, { title: e.target.value })}
                           onBlur={() => setEditingLinkId(null)}
                           onKeyDown={(e) => e.key === "Enter" && setEditingLinkId(null)}
-                          className="h-6 px-1 text-xs bg-transparent border-none focus:outline-none"
+                          className="h-6 px-1 text-xs bg-transparent border-none focus:outline-none flex-1"
                           autoFocus
                         />
                       ) : (
@@ -207,14 +218,6 @@ export function ConnectionsSection({
                 ))}
               </div>
             )}
-            <input
-              type="text"
-              placeholder="https://..."
-              value={newLinkUrl}
-              onChange={(e) => setNewLinkUrl(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleAddLink()}
-              className={PANEL_INPUT_CLASS}
-            />
           </section>
         )}
 
@@ -228,19 +231,20 @@ export function ConnectionsSection({
                 <Badge
                   variant="outline"
                   className="h-6 px-2 cursor-pointer hover:bg-white/5"
-                  onClick={onAddContact}
+                  onClick={() => onAddContact({ name: "New Contact" })}
                 >
                   <Plus className="w-3 h-3 mr-1" />Add
                 </Badge>
               }
             />
             {contacts.length > 0 ? (
-              <div className="space-y-1 mt-2">
+              <div className="space-y-4 mt-2">
                 {contacts.map((contact) => (
                   <ContactCard
                     key={contact.id}
                     contact={contact}
                     compact
+                    onUpdate={onUpdateContact ? (updates) => onUpdateContact(contact.id, updates) : undefined}
                     onDelete={onRemoveContact ? () => onRemoveContact(contact.id) : undefined}
                   />
                 ))}

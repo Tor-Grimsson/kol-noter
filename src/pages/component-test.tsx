@@ -2,9 +2,12 @@ import { useState } from "react";
 import { Badge } from "@/components/ui-elements/atoms/Badge";
 import { Tag } from "@/components/ui-elements/atoms/Tag";
 import { SectionHeader } from "@/components/ui-elements/atoms/SectionHeader";
+import { LabeledInput } from "@/components/ui-elements/atoms/LabeledInput";
 import { MediaItem, ImageThumbnail } from "@/components/ui-elements/molecules/MediaItem";
 import { HealthBadge, PriorityBadge, StatusBadge } from "@/components/ui-elements/molecules/MetricSelector";
 import { DropdownSelect } from "@/components/ui-elements/molecules/DropdownSelect";
+import { ContactCard, Contact } from "@/components/ui-elements/molecules/ContactCard";
+import { DetailTitleCard } from "@/components/ui-elements/molecules/DetailTitleCard";
 import { FileText, Image as ImageIcon, Mic, Download, Play, Trash2, Calendar, Link as LinkIcon, Users, AlertCircle, User, CheckCircle2, CalendarDays, Plus, Activity } from "lucide-react";
 import { MetadataSection } from "@/components/detail-view/sections/MetadataSection";
 import { MetricsSection } from "@/components/detail-view/sections/MetricsSection";
@@ -36,6 +39,24 @@ export default function ComponentTestPage() {
     status: "in_progress",
     lead: "John Doe",
     targetDate: "2026-03-15",
+  });
+  const [testContact, setTestContact] = useState<Contact>({
+    id: "test-1",
+    name: "John Doe",
+    role: "Developer",
+    email: "john@example.com",
+    phone: "+1 234 567 8900",
+  });
+  const [inputTag, setInputTag] = useState("");
+  const [inputUrl, setInputUrl] = useState("");
+
+  // DetailTitleCard state
+  const [titleCardData, setTitleCardData] = useState({
+    title: "Project Alpha",
+    subtitle: "Q1 Initiative",
+    field1: "john@example.com",
+    field2: "+1 234 567 8900",
+    field3: "@projectalpha",
   });
 
   return (
@@ -146,13 +167,22 @@ export default function ComponentTestPage() {
       {/* ========================================== */}
       <section className="border rounded-lg p-4 bg-[#0f0f13]">
         <h2 className="text-lg font-semibold mb-4 font-mono">DropdownSelect</h2>
-        <div className="max-w-md">
+        <div className="max-w-md grid grid-cols-2 gap-4">
           <DropdownSelect
             value={testType}
             options={["Project", "Note", "Task", "Idea"]}
             placeholder="Select type..."
             onChange={setTestType}
-            label="Type"
+            label="Type (sm)"
+            size="sm"
+          />
+          <DropdownSelect
+            value={testType}
+            options={["Project", "Note", "Task", "Idea"]}
+            placeholder="Select type..."
+            onChange={setTestType}
+            label="Type (lg)"
+            size="lg"
           />
         </div>
       </section>
@@ -240,13 +270,13 @@ export default function ComponentTestPage() {
               { id: "1", type: "file", url: "#", name: "document.pdf", size: 1024000, mimeType: "application/pdf", createdAt: Date.now() },
             ]}
             photos={[
-              { id: "1", name: "photo1.jpg", dataUrl: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect fill='%2349a0a2' width='100' height='100'/%3E%3C/svg%3E", createdAt: Date.now() },
-              { id: "2", name: "photo2.jpg", dataUrl: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect fill='%2366a44c' width='100' height='100'/%3E%3C/svg%3E", createdAt: Date.now() },
-              { id: "3", name: "photo3.jpg", dataUrl: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect fill='%23ffe32e' width='100' height='100'/%3E%3C/svg%3E", createdAt: Date.now() },
-              { id: "4", name: "photo4.jpg", dataUrl: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect fill='%23ce4646' width='100' height='100'/%3E%3C/svg%3E", createdAt: Date.now() },
-              { id: "5", name: "photo5.jpg", dataUrl: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect fill='%23db8000' width='100' height='100'/%3E%3C/svg%3E", createdAt: Date.now() },
-              { id: "6", name: "photo6.jpg", dataUrl: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect fill='%239437ff' width='100' height='100'/%3E%3C/svg%3E", createdAt: Date.now() },
-              { id: "7", name: "photo7.jpg", dataUrl: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect fill='%23d0d79d' width='100' height='100'/%3E%3C/svg%3E", createdAt: Date.now() },
+              { id: "1", name: "ph-01.png", dataUrl: "/placeholder-img/ph-01.png", createdAt: Date.now() },
+              { id: "2", name: "ph-02.png", dataUrl: "/placeholder-img/ph-02.png", createdAt: Date.now() },
+              { id: "3", name: "ph-03.png", dataUrl: "/placeholder-img/ph-03.png", createdAt: Date.now() },
+              { id: "4", name: "ph-01.png", dataUrl: "/placeholder-img/ph-01.png", createdAt: Date.now() },
+              { id: "5", name: "ph-02.png", dataUrl: "/placeholder-img/ph-02.png", createdAt: Date.now() },
+              { id: "6", name: "ph-03.png", dataUrl: "/placeholder-img/ph-03.png", createdAt: Date.now() },
+              { id: "7", name: "ph-01.png", dataUrl: "/placeholder-img/ph-01.png", createdAt: Date.now() },
             ]}
             voiceRecordings={[
               { id: "1", name: "meeting.wav", url: "#", duration: "3:45", createdAt: Date.now() },
@@ -287,6 +317,7 @@ export default function ComponentTestPage() {
             onUpdateLink={(id, updates) => console.log("Update link", id, updates)}
             onAddContact={(contact) => console.log("Add contact", contact)}
             onRemoveContact={(id) => console.log("Remove contact", id)}
+            onUpdateContact={(id, updates) => console.log("Update contact", id, updates)}
             isBottomPanel
           />
         </div>
@@ -298,7 +329,7 @@ export default function ComponentTestPage() {
       <section className="border rounded-lg p-4">
         <h2 className="text-lg font-semibold mb-4 font-mono">Design System Components</h2>
 
-        <div className="grid grid-cols-2 gap-8">
+        <div className="max-w-lg space-y-4">
           {/* CELL_STYLE verification */}
           <div>
             <h3 className="text-sm font-medium mb-2 font-mono">CELL_STYLE (bg-[#1e1e24] h-6 p-2 rounded-[4px])</h3>
@@ -357,45 +388,47 @@ export default function ComponentTestPage() {
 
         <div className="space-y-4 max-w-lg">
           {/* Single line input */}
-          <div>
-            <label className="text-[10px] text-muted-foreground uppercase block mb-1.5 font-mono">Single Line Input</label>
-            <input
-              type="text"
-              placeholder="Enter text..."
-              className={PANEL_STYLES.input}
-            />
-          </div>
+          <LabeledInput
+            label="Single Line Input"
+            value=""
+            onChange={() => {}}
+            placeholder="Enter text..."
+          />
 
           {/* Inline add input */}
-          <div className="flex gap-2">
-            <input
-              type="text"
+          <div className="flex items-end gap-x-4">
+            <LabeledInput
+              label="Add Tag"
+              value={inputTag}
+              onChange={setInputTag}
               placeholder="Add tag..."
-              className={PANEL_STYLES.input}
+              className="flex-1"
             />
-            <Button className={PANEL_STYLES.addButton}>
-              <Plus className="w-3 h-3 mr-1" /> Add
-            </Button>
+            <Badge variant="outline" className="h-6 px-2 cursor-pointer hover:bg-white/5">
+              <Plus className="w-3 h-3 mr-1" />Add
+            </Badge>
           </div>
 
           {/* Link add input */}
-          <div className="flex gap-2">
-            <input
-              type="text"
+          <div className="flex items-end gap-x-4">
+            <LabeledInput
+              label="Add Link"
+              value={inputUrl}
+              onChange={setInputUrl}
               placeholder="https://..."
-              className={PANEL_STYLES.input}
+              className="flex-1"
             />
-            <Button className={PANEL_STYLES.addButton}>
-              Add
-            </Button>
+            <Badge variant="outline" className="h-6 px-2 cursor-pointer hover:bg-white/5">
+              <Plus className="w-3 h-3 mr-1" />Add
+            </Badge>
           </div>
 
           {/* Textarea */}
           <div>
-            <label className="text-[10px] text-muted-foreground uppercase block mb-1.5 font-mono">Multi-line Textarea</label>
+            <label className="text-[10px] text-muted-foreground block mb-1">Multi-line Textarea</label>
             <textarea
               placeholder="Enter description..."
-              className="min-h-[80px] w-full rounded-[4px] bg-[#1e1e24] border border-white/10 p-2 text-xs placeholder:text-muted-foreground/50 focus:outline-none focus:border-white/15 resize-none"
+              className="min-h-[80px] w-full rounded-[4px] bg-[#1e1e24] border border-transparent p-2 text-xs placeholder:text-muted-foreground/50 hover:border-white/10 focus:outline-none focus:border-white/15 resize-none"
             />
           </div>
         </div>
@@ -429,23 +462,25 @@ export default function ComponentTestPage() {
       <section className="border rounded-lg p-4">
         <h2 className="text-lg font-semibold mb-4 font-mono">SectionHeader</h2>
 
-        <div className="space-y-4">
+        <div className="space-y-2">
           <SectionHeader
             title="Files"
             icon={<FileText className="w-3 h-3" />}
             count={5}
+            className="mb-0"
           />
           <SectionHeader
             title="Photos"
             icon={<ImageIcon className="w-3 h-3" />}
             count={12}
             collapsed
+            className="mb-0"
           />
           <SectionHeader
             title="Recordings"
             icon={<Mic className="w-3 h-3" />}
             count={3}
-            action={<Badge variant="outline" className="h-6 px-2 cursor-pointer hover:bg-white/5"><Plus className="w-3 h-3 mr-1" />Add</Badge>}
+            className="mb-0"
           />
         </div>
       </section>
@@ -457,7 +492,7 @@ export default function ComponentTestPage() {
         <h2 className="text-lg font-semibold mb-2 font-mono">MediaItem (Compact)</h2>
         <p className="text-xs text-muted-foreground mb-4 font-mono">p-1.5, bg-[#1e1e24], rounded-[4px], h-6</p>
 
-        <div className="space-y-2 max-w-md">
+        <div className="space-y-2 max-w-lg">
           <MediaItem
             type="file"
             name="document.pdf"
@@ -489,24 +524,24 @@ export default function ComponentTestPage() {
         <div className="grid grid-cols-3 gap-1 max-w-xs">
           <ImageThumbnail
             id="1"
-            name="photo1.jpg"
-            dataUrl="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect fill='%2349a0a2' width='100' height='100'/%3E%3C/svg%3E"
+            name="ph-01.png"
+            dataUrl="/placeholder-img/ph-01.png"
             onView={() => {}}
             onDownload={() => {}}
             onDelete={() => {}}
           />
           <ImageThumbnail
             id="2"
-            name="photo2.jpg"
-            dataUrl="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect fill='%2366a44c' width='100' height='100'/%3E%3C/svg%3E"
+            name="ph-02.png"
+            dataUrl="/placeholder-img/ph-02.png"
             onView={() => {}}
             onDownload={() => {}}
             onDelete={() => {}}
           />
           <ImageThumbnail
             id="3"
-            name="photo3.jpg"
-            dataUrl="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect fill='%23ffe32e' width='100' height='100'/%3E%3C/svg%3E"
+            name="ph-03.png"
+            dataUrl="/placeholder-img/ph-03.png"
             onView={() => {}}
             onDownload={() => {}}
             onDelete={() => {}}
@@ -515,31 +550,44 @@ export default function ComponentTestPage() {
       </section>
 
       {/* ========================================== */}
-      {/* CONTACT CARD - Delete Button Style */}
+      {/* CONTACT CARD - Compact Editable */}
       {/* ========================================== */}
       <section className="border rounded-lg p-4 bg-[#0f0f13]">
-        <h2 className="text-lg font-semibold mb-4 font-mono">Contact Card (delete = white/30, not red)</h2>
+        <h2 className="text-lg font-semibold mb-4 font-mono">Contact Card (compact, editable)</h2>
 
         <div className="max-w-lg">
-          <div className="flex items-center justify-between p-2 rounded-[4px] bg-[#1e1e24]">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-[10px] font-medium text-black">
-                JD
-              </div>
-              <div className="flex flex-col">
-                <span className="text-sm font-medium">John Doe</span>
-                <span className="text-xs text-muted-foreground">Developer</span>
-              </div>
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 text-white/30 hover:text-white/50"
-              onClick={() => {}}
-            >
-              <Trash2 className="w-3 h-3" />
-            </Button>
-          </div>
+          <ContactCard
+            contact={testContact}
+            compact
+            onUpdate={(updates) => setTestContact((prev) => ({ ...prev, ...updates }))}
+            onDelete={() => console.log("Delete contact")}
+          />
+        </div>
+      </section>
+
+      {/* ========================================== */}
+      {/* DETAIL TITLE CARD - Compact Editable */}
+      {/* ========================================== */}
+      <section className="border rounded-lg p-4 bg-[#0f0f13]">
+        <h2 className="text-lg font-semibold mb-4 font-mono">Detail Title Card (compact, editable)</h2>
+
+        <div className="max-w-lg">
+          <DetailTitleCard
+            title={titleCardData.title}
+            subtitle={titleCardData.subtitle}
+            field1Label="Email"
+            field1Value={titleCardData.field1}
+            field2Label="Phone"
+            field2Value={titleCardData.field2}
+            field3Label="Socials"
+            field3Value={titleCardData.field3}
+            onUpdateTitle={(title) => setTitleCardData((prev) => ({ ...prev, title }))}
+            onUpdateSubtitle={(subtitle) => setTitleCardData((prev) => ({ ...prev, subtitle }))}
+            onUpdateField1={(field1) => setTitleCardData((prev) => ({ ...prev, field1 }))}
+            onUpdateField2={(field2) => setTitleCardData((prev) => ({ ...prev, field2 }))}
+            onUpdateField3={(field3) => setTitleCardData((prev) => ({ ...prev, field3 }))}
+            onDelete={() => console.log("Delete title card")}
+          />
         </div>
       </section>
     </div>
