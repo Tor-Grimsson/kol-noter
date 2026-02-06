@@ -9,131 +9,8 @@ import type { System, Note, Project } from '@/store/NotesContext';
 import type { IPersistenceAdapter, VaultData } from './types';
 import { STORAGE_KEYS } from './types';
 
-/**
- * Default systems for new installations
- */
-const defaultSystems: System[] = [
-  {
-    id: "system-1",
-    name: "Work",
-    projects: [
-      { id: "project-1", name: "Engineering" },
-      { id: "project-2", name: "Product" },
-    ],
-  },
-  {
-    id: "system-2",
-    name: "Personal",
-    projects: [
-      { id: "project-3", name: "Learning" },
-    ],
-  },
-];
-
-/**
- * Default notes for new installations
- */
-const defaultNotes: Note[] = [
-  {
-    id: "1",
-    title: "Project Tasks Summary",
-    preview: "This document outlines the refactoring and animation tasks discussed...",
-    date: "2 mins ago",
-    tags: ["work", "urgent"],
-    favorite: true,
-    color: "warning",
-    systemId: "system-1",
-    projectId: "project-1",
-    editorType: "modular",
-    content: [
-      { id: "1", type: "heading", content: "Project Tasks Summary", metadata: { level: 1 } },
-      { id: "2", type: "paragraph", content: "This document outlines the refactoring and animation tasks discussed." },
-      { id: "3", type: "section", content: "Completed Tasks" },
-      { id: "4", type: "heading", content: "Task 1: Deprecate Custom Design System", metadata: { level: 2 } },
-      { id: "5", type: "paragraph", content: "The initial task was to refactor the entire frontend to remove the custom CSS utility classes defined in index.css." },
-    ],
-    createdAt: Date.now() - 120000,
-    updatedAt: Date.now() - 120000,
-  },
-  {
-    id: "2",
-    title: "Router Config",
-    preview: "Configuration for routing system and navigation patterns...",
-    date: "10 mins ago",
-    tags: ["config"],
-    color: "accent",
-    systemId: "system-1",
-    projectId: "project-1",
-    editorType: "standard",
-    content: "# Router Config\n\nConfiguration for routing system and navigation patterns.\n\n## Routes\n\n- `/` - Home\n- `/projects` - Projects view\n- `/hierarchy` - Hierarchy view",
-    createdAt: Date.now() - 600000,
-    updatedAt: Date.now() - 600000,
-  },
-  {
-    id: "FAD",
-    title: "FAD",
-    preview: "Frequently accessed data and personal notes...",
-    date: "30 mins ago",
-    tags: ["personal"],
-    favorite: true,
-    color: "primary",
-    systemId: "system-2",
-    projectId: "project-3",
-    editorType: "visual",
-    content: [
-      { id: "node-1", type: "start", label: "Start", x: 100, y: 100 },
-      { id: "node-2", type: "process", label: "Process Data", x: 100, y: 200 },
-      { id: "node-3", type: "end", label: "End", x: 100, y: 300 },
-    ],
-    createdAt: Date.now() - 1800000,
-    updatedAt: Date.now() - 1800000,
-  },
-  {
-    id: "3",
-    title: "Meeting Notes",
-    preview: "Q4 planning session with product team...",
-    date: "1 hour ago",
-    tags: ["meetings"],
-    color: "success",
-    systemId: "system-1",
-    projectId: "project-2",
-    editorType: "modular",
-    content: [
-      { id: "1", type: "heading", content: "Meeting Notes", metadata: { level: 1 } },
-      { id: "2", type: "paragraph", content: "Q4 planning session with product team." },
-    ],
-    createdAt: Date.now() - 3600000,
-    updatedAt: Date.now() - 3600000,
-  },
-  {
-    id: "4",
-    title: "Design System",
-    preview: "Typography guidelines, spacing tokens, and color palette...",
-    date: "2 hours ago",
-    tags: ["design"],
-    color: "accent",
-    systemId: "system-1",
-    projectId: "project-2",
-    editorType: "standard",
-    content: "",
-    createdAt: Date.now() - 7200000,
-    updatedAt: Date.now() - 7200000,
-  },
-  {
-    id: "5",
-    title: "API Documentation",
-    preview: "REST endpoints, authentication flow, and rate limits...",
-    date: "Yesterday",
-    tags: ["docs", "api"],
-    color: "primary",
-    systemId: "system-1",
-    projectId: "project-1",
-    editorType: "standard",
-    content: "# API Documentation\n\nREST endpoints, authentication flow, and rate limits.",
-    createdAt: Date.now() - 86400000,
-    updatedAt: Date.now() - 86400000,
-  },
-];
+const defaultSystems: System[] = [];
+const defaultNotes: Note[] = [];
 
 export class LocalStorageAdapter implements IPersistenceAdapter {
   readonly name = 'localStorage';
@@ -361,6 +238,12 @@ export class LocalStorageAdapter implements IPersistenceAdapter {
     }
 
     return note.attachments[filename];
+  }
+
+  async getNoteSize(noteId: string): Promise<number> {
+    // localStorage doesn't support file size calculation
+    // Return 0 as a reasonable fallback
+    return 0;
   }
 
   // localStorage doesn't support external change watching

@@ -54,7 +54,7 @@ export const EditPane = ({
             String(now.getHours()).padStart(2, '0') +
             String(now.getMinutes()).padStart(2, '0') +
             String(now.getSeconds()).padStart(2, '0');
-          const filename = `Pasted image ${timestamp}.png`;
+          const filename = `pasted-image-${timestamp}.png`;
 
           // Insert the image syntax at cursor position
           const textarea = textareaRef.current;

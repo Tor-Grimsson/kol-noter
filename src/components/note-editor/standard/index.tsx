@@ -13,6 +13,7 @@ interface UnifiedMarkdownEditorProps {
   onChange?: (content: string) => void;
   focusMode?: boolean;
   attachments?: { [filename: string]: string };
+  photos?: Array<{ id: string; name: string; dataUrl: string; addedAt: number }>;
   onSaveAttachment?: (filename: string, dataUrl: string) => void;
   onAddPhoto?: (name: string, dataUrl: string) => void;
 }
@@ -67,6 +68,7 @@ export const UnifiedMarkdownEditor = ({
   onChange,
   focusMode,
   attachments,
+  photos,
   onSaveAttachment,
   onAddPhoto,
 }: UnifiedMarkdownEditorProps) => {
@@ -179,7 +181,7 @@ export const UnifiedMarkdownEditor = ({
           </ResizablePanel>
           <ResizableHandle withHandle />
           <ResizablePanel defaultSize={50} minSize={30} className="h-full">
-            <PreviewPane content={content} attachments={attachments} />
+            <PreviewPane content={content} attachments={attachments} photos={photos} />
           </ResizablePanel>
         </ResizablePanelGroup>
       );
@@ -188,7 +190,7 @@ export const UnifiedMarkdownEditor = ({
     // Preview only
     if (showPreview) {
       return (
-        <PreviewPane content={content} onClickToEdit={handleClickToEdit} attachments={attachments} />
+        <PreviewPane content={content} onClickToEdit={handleClickToEdit} attachments={attachments} photos={photos} />
       );
     }
 

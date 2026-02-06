@@ -33,6 +33,7 @@ export interface SectionMetadataProps {
   onUpdateDescription?: (description: string) => void;
   onUpdateType?: (type: string) => void;
   onUpdateSize?: (size: number) => void;
+  isSizeReadOnly?: boolean;
   isBottomPanel?: boolean;
   className?: string;
 }
@@ -50,6 +51,7 @@ export function SectionMetadata({
   onUpdateDescription,
   onUpdateType,
   onUpdateSize,
+  isSizeReadOnly = false,
   isBottomPanel = false,
   className,
 }: SectionMetadataProps) {
@@ -123,13 +125,22 @@ export function SectionMetadata({
 
           {/* Size */}
           {size !== undefined && (
-            <DropdownSelect
-              value={size}
-              options={[0, 1024, 5120, 10240, 51200, 102400, 512000, 1048576].map(s => ({ value: s, label: formatSize(s) }))}
-              placeholder="Select..."
-              onChange={onUpdateSize}
-              label={sizeLabel || "Size"}
-            />
+            isSizeReadOnly ? (
+              <div>
+                <label className={cn(LABEL_STYLE, "block mb-1.5")}>{sizeLabel || "Size"}</label>
+                <div className={cn(CELL_STYLE)}>
+                  <span className={cn(VALUE_STYLE)}>{formatSize(size)}</span>
+                </div>
+              </div>
+            ) : (
+              <DropdownSelect
+                value={size}
+                options={[0, 1024, 5120, 10240, 51200, 102400, 512000, 1048576].map(s => ({ value: s, label: formatSize(s) }))}
+                placeholder="Select..."
+                onChange={onUpdateSize}
+                label={sizeLabel || "Size"}
+              />
+            )
           )}
         </section>
       </div>
@@ -214,13 +225,22 @@ export function SectionMetadata({
 
         {/* Size */}
         {size !== undefined && (
-          <DropdownSelect
-            value={size}
-            options={[0, 1024, 5120, 10240, 51200, 102400, 512000, 1048576].map(s => ({ value: s, label: formatSize(s) }))}
-            placeholder="Select..."
-            onChange={onUpdateSize}
-            label={sizeLabel || "Size"}
-          />
+          isSizeReadOnly ? (
+            <div>
+              <label className={cn(LABEL_STYLE, "block mb-1.5")}>{sizeLabel || "Size"}</label>
+              <div className={cn(CELL_STYLE)}>
+                <span className={cn(VALUE_STYLE)}>{formatSize(size)}</span>
+              </div>
+            </div>
+          ) : (
+            <DropdownSelect
+              value={size}
+              options={[0, 1024, 5120, 10240, 51200, 102400, 512000, 1048576].map(s => ({ value: s, label: formatSize(s) }))}
+              placeholder="Select..."
+              onChange={onUpdateSize}
+              label={sizeLabel || "Size"}
+            />
+          )
         )}
       </section>
     </div>

@@ -17,8 +17,10 @@ import {
   rename,
   exists,
   copyFile,
+  stat,
   BaseDirectory,
-  type ReadDirOptions
+  type ReadDirOptions,
+  type FileStats
 } from '@tauri-apps/plugin-fs';
 import { open as openDialog, save, message, ask } from '@tauri-apps/plugin-dialog';
 import { documentDir, homeDir, appDataDir } from '@tauri-apps/api/path';
@@ -104,6 +106,18 @@ export async function readBinary(path: string): Promise<Uint8Array> {
     throw new Error('File system access requires Tauri');
   }
   return readBinaryFile(path);
+}
+
+/**
+ * Get the size of a file in bytes
+ */
+export async function getFileSize(path: string): Promise<number> {
+  if (!isTauri()) {
+    throw new Error('File system access requires Tauri');
+  }
+
+  const stats = await stat(path);
+  return stats.size;
 }
 
 /**

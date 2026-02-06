@@ -187,6 +187,8 @@ export interface Note {
   color?: string;
   /** Custom icon to display on card, null = hidden, string = icon name */
   icon?: string | null;
+  /** ID of the photo to use as cover image (separate from photos array) */
+  coverPhotoId?: string;
   systemId: string;
   projectId: string;
   editorType: EditorType;
@@ -208,17 +210,3 @@ export interface Note {
   updatedAt: number;
 }
 
-// Default block template for new notes
-export const defaultBlocks: Block[] = [
-  {
-    id: "1",
-    type: "heading",
-    content: "New Note",
-    metadata: { level: 1 },
-  },
-  {
-    id: "2",
-    type: "paragraph",
-    content: "Start writing here...",
-  },
-];

@@ -1,10 +1,8 @@
 import { createContext, useContext, ReactNode, useState, useEffect, useRef } from "react";
 import { useVault } from "@/components/vault-system/VaultProvider";
 import { filesystemAdapter } from "@/lib/persistence/filesystem-adapter";
-import { localStorageAdapter } from "@/lib/persistence/localStorage-adapter";
-import { STORAGE_KEYS } from "@/lib/persistence/types";
 
-// Import types and dummy data from extracted modules
+// Import types from extracted modules
 import {
   EditorType,
   HealthStatus,
@@ -27,23 +25,17 @@ import {
   Project,
   System,
   Note,
-  System as SystemType,
-  Project as ProjectType,
-  Note as NoteType,
-  defaultSystems,
-  defaultBlocks,
-  defaultNotes,
 } from "@/lib/dummy-data";
 
 // Re-export types for backward compatibility
 export type { EditorType, HealthStatus, PriorityLevel, ItemStatus, ItemMetrics, TagWithColor };
 export { TAG_COLOR_PRESETS, EXPLORER_COLORS, TAG_COLOR_INVERSES, EXPLORER_ICONS };
 export type { Block, VisualNode, Reminder, Attachment, Photo, VoiceRecording, SavedLink, Contact, Project, System, Note };
-export { defaultSystems, defaultBlocks, defaultNotes };
 
 interface NotesStore {
   systems: System[];
   notes: Note[];
+  notesRef: React.MutableRefObject<Note[]>;
   trash: Note[];
   isLoading: boolean;
   // System operations
@@ -142,25 +134,6 @@ interface NotesStore {
 // Context
 const NotesContext = createContext<NotesStore | null>(null);
 
-// Helper to load from localStorage
-function loadFromLocalStorage<T>(key: string, defaultValue: T): T {
-  try {
-    const item = localStorage.getItem(key);
-    return item ? JSON.parse(item) : defaultValue;
-  } catch {
-    return defaultValue;
-  }
-}
-
-// Helper to save to localStorage (backup)
-function saveToLocalStorage<T>(key: string, value: T): void {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch (error) {
-    console.warn(`Failed to save to localStorage key "${key}":`, error);
-  }
-}
-
 // Provider
 export function NotesProvider({ children }: { children: ReactNode }) {
   const { isFilesystem, vaultPath, isReady } = useVault();
@@ -169,6 +142,12 @@ export function NotesProvider({ children }: { children: ReactNode }) {
   const [notes, setNotes] = useState<Note[]>([]);
   const [trash, setTrash] = useState<Note[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const notesRef = useRef<Note[]>([]); // Always current
+
+  // Keep ref in sync with notes
+  useEffect(() => {
+    notesRef.current = notes;
+  }, [notes]);
 
   // Track if we've loaded data (to avoid re-loading)
   const hasLoadedRef = useRef(false);
@@ -186,21 +165,20 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       try {
         if (isFilesystem && vaultPath) {
           const data = await filesystemAdapter.loadAll();
-          setSystems(data.systems.length > 0 ? data.systems : defaultSystems);
-          setNotes(data.notes.length > 0 ? data.notes : defaultNotes);
+          setSystems(data.systems);
+          setNotes(data.notes);
           setTrash(data.trash);
         } else {
-          setSystems(loadFromLocalStorage(STORAGE_KEYS.SYSTEMS, defaultSystems));
-          setNotes(loadFromLocalStorage(STORAGE_KEYS.NOTES, defaultNotes));
-          setTrash(loadFromLocalStorage(STORAGE_KEYS.TRASH, []));
+          setSystems([]);
+          setNotes([]);
+          setTrash([]);
         }
         hasLoadedRef.current = true;
       } catch (error) {
         console.error('[NotesStore] Failed to load data:', error);
-        // Fall back to localStorage on error
-        setSystems(loadFromLocalStorage(STORAGE_KEYS.SYSTEMS, defaultSystems));
-        setNotes(loadFromLocalStorage(STORAGE_KEYS.NOTES, defaultNotes));
-        setTrash(loadFromLocalStorage(STORAGE_KEYS.TRASH, []));
+        setSystems([]);
+        setNotes([]);
+        setTrash([]);
         hasLoadedRef.current = true;
       } finally {
         setIsLoading(false);
@@ -236,7 +214,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to save system to filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.SYSTEMS, newSystems);
 
     return newSystem;
   };
@@ -252,7 +229,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to update system in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.SYSTEMS, newSystems);
   };
 
   const deleteSystem = (id: string) => {
@@ -268,8 +244,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to delete system from filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.SYSTEMS, newSystems);
-    saveToLocalStorage(STORAGE_KEYS.NOTES, newNotes);
   };
 
   const updateSystemMetadata = (id: string, updates: Partial<Omit<System, "id" | "projects">>) => {
@@ -290,7 +264,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to update system metadata in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.SYSTEMS, newSystems);
   };
 
   const getSystem = (id: string): System | undefined => {
@@ -322,7 +295,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to save project to filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.SYSTEMS, updatedSystems);
 
     return newProject;
   };
@@ -346,7 +318,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to update project in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.SYSTEMS, newSystems);
   };
 
   const deleteProject = (systemId: string, projectId: string) => {
@@ -369,8 +340,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to delete project from filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.SYSTEMS, newSystems);
-    saveToLocalStorage(STORAGE_KEYS.NOTES, newNotes);
   };
 
   const updateProjectMetadata = (systemId: string, projectId: string, updates: Partial<Omit<Project, "id">>) => {
@@ -399,7 +368,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to update project metadata in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.SYSTEMS, newSystems);
   };
 
   const getProject = (systemId: string, projectId: string): Project | undefined => {
@@ -452,7 +420,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to save note to filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.NOTES, newNotes);
 
     return newNote;
   };
@@ -475,48 +442,33 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to update note in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.NOTES, newNotes);
   };
 
   const saveAttachment = (noteId: string, filename: string, dataUrl: string) => {
-    const newNotes = notes.map(n => {
-      if (n.id !== noteId) return n;
+    // Use functional update to avoid stale closure
+    setNotes(prevNotes => {
+      const newNotes = prevNotes.map(n => {
+        if (n.id !== noteId) return n;
 
-      return {
-        ...n,
-        attachments: {
-          ...n.attachments,
-          [filename]: dataUrl,
-        },
-        updatedAt: Date.now(),
-      };
+        return {
+          ...n,
+          attachments: {
+            ...(n.attachments || {}),
+            [filename]: dataUrl,
+          },
+          updatedAt: Date.now(),
+        };
+      });
+
+      return newNotes;
     });
-    setNotes(newNotes);
 
-    // Save to filesystem adapter (saves file to _assets folder)
+    // Also save to filesystem if in filesystem mode
     if (isFilesystem) {
-      filesystemAdapter.saveAttachment(noteId, filename, dataUrl)
-        .then((path) => {
-          // Update note with path reference instead of dataUrl
-          const updatedNotes = notes.map(n => {
-            if (n.id !== noteId) return n;
-            return {
-              ...n,
-              attachments: {
-                ...n.attachments,
-                [filename]: path,
-              },
-              updatedAt: Date.now(),
-            };
-          });
-          setNotes(updatedNotes);
-          saveToLocalStorage(STORAGE_KEYS.NOTES, updatedNotes);
-        })
-        .catch(err => {
-          console.error('[NotesStore] Failed to save attachment to filesystem:', err);
-        });
+      filesystemAdapter.saveAttachment(noteId, filename, dataUrl).catch(err =>
+        console.error('[NotesStore] Failed to save attachment to filesystem:', err)
+      );
     }
-    saveToLocalStorage(STORAGE_KEYS.NOTES, newNotes);
   };
 
   const updateNoteContent = (id: string, content: Block[] | string | VisualNode[]) => {
@@ -579,7 +531,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to update note content in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.NOTES, newNotes);
 
     // Sync auto-extracted tags and links from content
     syncAutoExtractedData(id);
@@ -599,8 +550,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
           console.error('[NotesStore] Failed to delete note from filesystem:', err)
         );
       }
-      saveToLocalStorage(STORAGE_KEYS.NOTES, newNotes);
-      saveToLocalStorage(STORAGE_KEYS.TRASH, newTrash);
     }
   };
 
@@ -618,8 +567,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
           console.error('[NotesStore] Failed to restore note from filesystem:', err)
         );
       }
-      saveToLocalStorage(STORAGE_KEYS.NOTES, newNotes);
-      saveToLocalStorage(STORAGE_KEYS.TRASH, newTrash);
     }
   };
 
@@ -633,7 +580,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to permanently delete note from filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.TRASH, newTrash);
   };
 
   const emptyTrash = () => {
@@ -645,7 +591,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to empty trash in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.TRASH, []);
   };
 
   const getNote = (id: string): Note | undefined => {
@@ -683,52 +628,61 @@ export function NotesProvider({ children }: { children: ReactNode }) {
 
   // Sync auto-extracted tags and links from content to note metadata
   const syncAutoExtractedData = (noteId: string) => {
-    const note = notes.find(n => n.id === noteId);
-    if (!note) return;
+    setNotes(prevNotes => {
+      const note = prevNotes.find(n => n.id === noteId);
+      if (!note) return prevNotes;
 
-    // Extract tags from content
-    const extractedTags = extractTagsFromContent(noteId);
-    const existingTags = note.tags || [];
-    const allTags = [...new Set([...existingTags, ...extractedTags])];
+      // Extract tags from content
+      const extractedTags = extractTagsFromContent(noteId);
+      const existingTags = note.tags || [];
+      const allTags = [...new Set([...existingTags, ...extractedTags])];
 
-    // Extract links from content (http/https URLs)
-    let content = '';
-    if (typeof note.content === 'string') {
-      content = note.content;
-    } else if (Array.isArray(note.content)) {
-      const first = note.content[0] as any;
-      if (first?.type && ["heading", "paragraph", "code", "list", "image", "section"].includes(first.type)) {
-        content = (note.content as Block[]).map(b => b.content || '').join(' ');
+      // Extract links from content (http/https URLs)
+      let content = '';
+      if (typeof note.content === 'string') {
+        content = note.content;
+      } else if (Array.isArray(note.content)) {
+        const first = note.content[0] as any;
+        if (first?.type && ["heading", "paragraph", "code", "list", "image", "section"].includes(first.type)) {
+          content = (note.content as Block[]).map(b => b.content || '').join(' ');
+        }
       }
-    }
-    const urlMatches = content.match(/https?:\/\/[^\s)]+/g) || [];
-    const existingLinks = note.links || [];
-    const autoExtractedUrls = urlMatches.filter(url => !existingLinks.some(l => l.url === url));
+      const urlMatches = content.match(/(?:https?:\/\/|www\.)[^\s)]+/g) || [];
+      const existingLinks = note.links || [];
+      const autoExtractedUrls = urlMatches.filter(url => !existingLinks.some(l => l.url === url));
 
-    // Update note if there are new tags or links
-    const newLinks = autoExtractedUrls.map(url => ({
-      id: `link_${Date.now()}_${Math.random().toString(36).slice(2)}`,
-      url,
-      title: url.split('/').pop() || url,
-      addedAt: Date.now(),
-    }));
+      // Update note if there are new tags or links
+      const newLinks = autoExtractedUrls.map(url => {
+        // Normalize www. URLs to https://
+        const normalizedUrl = url.startsWith('www.') ? `https://${url}` : url;
+        return {
+          id: `link_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+          url: normalizedUrl,
+          title: url.split('/').pop() || url,
+          addedAt: Date.now(),
+        };
+      });
 
-    if (allTags.length > existingTags.length || newLinks.length > 0) {
-      setNotes(notes.map(n => n.id !== noteId ? n : {
-        ...n,
-        tags: allTags,
-        links: [...existingLinks, ...newLinks],
-        updatedAt: Date.now(),
-      }));
+      if (allTags.length > existingTags.length || newLinks.length > 0) {
+        const updatedNote = {
+          ...note,
+          tags: allTags,
+          links: [...existingLinks, ...newLinks],
+          updatedAt: Date.now(),
+        };
 
-      const updatedNote = notes.find(n => n.id === noteId);
-      if (isFilesystem && updatedNote) {
-        filesystemAdapter.saveNote(updatedNote).catch(err =>
-          console.error('[NotesStore] Failed to sync auto-extracted data in filesystem:', err)
-        );
+        // Save to filesystem after state update
+        if (isFilesystem) {
+          filesystemAdapter.saveNote(updatedNote).catch(err =>
+            console.error('[NotesStore] Failed to sync auto-extracted data in filesystem:', err)
+          );
+        }
+
+        return prevNotes.map(n => n.id !== noteId ? n : updatedNote);
       }
-      saveToLocalStorage(STORAGE_KEYS.NOTES, notes);
-    }
+
+      return prevNotes;
+    });
   };
 
   // Get aggregated tags from all items at a level
@@ -860,7 +814,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to update note tag color in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.NOTES, newNotes);
   };
 
   // Update tag color for a project
@@ -892,7 +845,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to update project tag color in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.SYSTEMS, newSystems);
   };
 
   // Update tag color for a system
@@ -916,7 +868,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to update system tag color in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.SYSTEMS, newSystems);
   };
 
   // Update metrics for a note
@@ -939,7 +890,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to update note metrics in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.NOTES, notes);
   };
 
   // Update metrics for a project
@@ -969,7 +919,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to update project metrics in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.SYSTEMS, systems);
   };
 
   // Update metrics for a system
@@ -992,7 +941,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to update system metrics in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.SYSTEMS, systems);
   };
 
   // Update color/icon for a system
@@ -1013,7 +961,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to update system color/icon in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.SYSTEMS, systems);
   };
 
   // Update color/icon for a project
@@ -1041,7 +988,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to update project color/icon in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.SYSTEMS, systems);
   };
 
   // Add attachment to a system
@@ -1066,7 +1012,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to add system attachment in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.SYSTEMS, systems);
   };
 
   // Remove attachment from a system
@@ -1086,7 +1031,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to remove system attachment in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.SYSTEMS, systems);
   };
 
   // Add attachment to a project
@@ -1118,7 +1062,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to add project attachment in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.SYSTEMS, systems);
   };
 
   // Remove attachment from a project
@@ -1145,7 +1088,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to remove project attachment in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.SYSTEMS, systems);
   };
 
   // Photo operations
@@ -1159,7 +1101,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to add system photo in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.SYSTEMS, systems);
   };
 
   const removeSystemPhoto = (systemId: string, photoId: string) => {
@@ -1171,7 +1112,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to remove system photo in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.SYSTEMS, systems);
   };
 
   const addProjectPhoto = (systemId: string, projectId: string, name: string, dataUrl: string) => {
@@ -1188,7 +1128,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to add project photo in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.SYSTEMS, systems);
   };
 
   const removeProjectPhoto = (systemId: string, projectId: string, photoId: string) => {
@@ -1204,7 +1143,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to remove project photo in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.SYSTEMS, systems);
   };
 
   // Voice recording operations
@@ -1218,7 +1156,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to add system voice recording in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.SYSTEMS, systems);
   };
 
   const removeSystemVoiceRecording = (systemId: string, recordingId: string) => {
@@ -1230,7 +1167,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to remove system voice recording in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.SYSTEMS, systems);
   };
 
   const addProjectVoiceRecording = (systemId: string, projectId: string, name: string, dataUrl: string, duration?: string) => {
@@ -1247,7 +1183,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to add project voice recording in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.SYSTEMS, systems);
   };
 
   const removeProjectVoiceRecording = (systemId: string, projectId: string, recordingId: string) => {
@@ -1263,7 +1198,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to remove project voice recording in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.SYSTEMS, systems);
   };
 
   // Link operations
@@ -1277,7 +1211,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to add system link in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.SYSTEMS, systems);
   };
 
   const removeSystemLink = (systemId: string, linkId: string) => {
@@ -1289,7 +1222,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to remove system link in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.SYSTEMS, systems);
   };
 
   const updateSystemLink = (systemId: string, linkId: string, updates: Partial<SavedLink>) => {
@@ -1305,7 +1237,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to update system link in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.SYSTEMS, systems);
   };
 
   const addProjectLink = (systemId: string, projectId: string, url: string, title?: string) => {
@@ -1322,7 +1253,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to add project link in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.SYSTEMS, systems);
   };
 
   const removeProjectLink = (systemId: string, projectId: string, linkId: string) => {
@@ -1338,7 +1268,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to remove project link in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.SYSTEMS, systems);
   };
 
   const updateProjectLink = (systemId: string, projectId: string, linkId: string, updates: Partial<SavedLink>) => {
@@ -1358,7 +1287,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to update project link in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.SYSTEMS, systems);
   };
 
   // Detail notes operations
@@ -1371,7 +1299,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to update system detail notes in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.SYSTEMS, systems);
   };
 
   const updateProjectDetailNotes = (systemId: string, projectId: string, notes: string) => {
@@ -1387,7 +1314,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to update project detail notes in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.SYSTEMS, systems);
   };
 
   // Tag operations for system/project
@@ -1404,7 +1330,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to add system tag in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.SYSTEMS, systems);
   };
 
   const removeSystemTag = (systemId: string, tag: string) => {
@@ -1420,7 +1345,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to remove system tag in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.SYSTEMS, systems);
   };
 
   const addProjectTag = (systemId: string, projectId: string, tag: string) => {
@@ -1440,7 +1364,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to add project tag in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.SYSTEMS, systems);
   };
 
   const removeProjectTag = (systemId: string, projectId: string, tag: string) => {
@@ -1460,7 +1383,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to remove project tag in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.SYSTEMS, systems);
   };
 
   // System contacts operations
@@ -1478,7 +1400,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to add system contact in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.SYSTEMS, systems);
   };
 
   const removeSystemContact = (systemId: string, contactId: string) => {
@@ -1494,7 +1415,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to remove system contact in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.SYSTEMS, systems);
   };
 
   // Project contacts operations
@@ -1517,7 +1437,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to add project contact in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.SYSTEMS, systems);
   };
 
   const removeProjectContact = (systemId: string, projectId: string, contactId: string) => {
@@ -1538,21 +1457,31 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to remove project contact in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.SYSTEMS, systems);
   };
 
   // Note-specific operations
   const addNotePhoto = (noteId: string, name: string, dataUrl: string) => {
     const newPhoto: Photo = { id: crypto.randomUUID(), name, dataUrl, addedAt: Date.now() };
-    setNotes(notes.map(n => n.id !== noteId ? n : { ...n, photos: [...(n.photos || []), newPhoto], updatedAt: Date.now() }));
 
-    const updatedNote = notes.find(n => n.id === noteId);
-    if (isFilesystem && updatedNote) {
-      filesystemAdapter.saveNote(updatedNote).catch(err =>
-        console.error('[NotesStore] Failed to add note photo in filesystem:', err)
-      );
-    }
-    saveToLocalStorage(STORAGE_KEYS.NOTES, notes);
+    // Update React state
+    setNotes(prevNotes => {
+      return prevNotes.map(n => {
+        if (n.id !== noteId) return n;
+        const updatedNote = { ...n, photos: [...(n.photos || []), newPhoto], updatedAt: Date.now() };
+
+        // Save to filesystem after state update
+        if (isFilesystem) {
+          filesystemAdapter.saveAttachment(noteId, name, dataUrl).catch(err =>
+            console.error('[NotesStore] Failed to save photo attachment to filesystem:', err)
+          );
+          filesystemAdapter.saveNote(updatedNote).catch(err =>
+            console.error('[NotesStore] Failed to save note with photo in filesystem:', err)
+          );
+        }
+
+        return updatedNote;
+      });
+    });
   };
 
   const removeNotePhoto = (noteId: string, photoId: string) => {
@@ -1564,7 +1493,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to remove note photo in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.NOTES, notes);
   };
 
   const addNoteVoiceRecording = (noteId: string, name: string, dataUrl: string, duration?: string) => {
@@ -1577,7 +1505,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to add note voice recording in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.NOTES, notes);
   };
 
   const removeNoteVoiceRecording = (noteId: string, recordingId: string) => {
@@ -1589,7 +1516,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to remove note voice recording in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.NOTES, notes);
   };
 
   const addNoteLink = (noteId: string, url: string, title?: string) => {
@@ -1602,7 +1528,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to add note link in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.NOTES, notes);
   };
 
   const removeNoteLink = (noteId: string, linkId: string) => {
@@ -1614,7 +1539,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to remove note link in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.NOTES, notes);
   };
 
   const updateNoteLink = (noteId: string, linkId: string, updates: Partial<SavedLink>) => {
@@ -1630,7 +1554,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to update note link in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.NOTES, notes);
   };
 
   const addNoteTag = (noteId: string, tag: string) => {
@@ -1646,7 +1569,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to add note tag in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.NOTES, notes);
   };
 
   const removeNoteTag = (noteId: string, tag: string) => {
@@ -1662,7 +1584,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to remove note tag in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.NOTES, notes);
   };
 
   const renameNoteTag = (noteId: string, oldTag: string, newTag: string) => {
@@ -1683,7 +1604,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to rename note tag in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.NOTES, notes);
   };
 
   const updateNoteCustomType = (noteId: string, customType: string) => {
@@ -1695,7 +1615,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to update note custom type in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.NOTES, notes);
   };
 
   const updateNoteDetailNotes = (noteId: string, detailNotes: string) => {
@@ -1707,7 +1626,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to update note detail notes in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.NOTES, notes);
   };
 
   // Contact operations for notes
@@ -1725,7 +1643,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to add note contact in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.NOTES, notes);
   };
 
   const removeNoteContact = (noteId: string, contactId: string) => {
@@ -1741,7 +1658,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to remove note contact in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.NOTES, notes);
   };
 
   const updateNoteContact = (noteId: string, contactId: string, updates: Partial<Contact>) => {
@@ -1757,12 +1673,12 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         console.error('[NotesStore] Failed to update note contact in filesystem:', err)
       );
     }
-    saveToLocalStorage(STORAGE_KEYS.NOTES, notes);
   };
 
   const store: NotesStore = {
     systems,
     notes,
+    notesRef,
     trash,
     isLoading,
     addSystem,

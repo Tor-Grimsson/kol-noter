@@ -121,6 +121,12 @@ export interface IPersistenceAdapter {
   getAttachment(noteId: string, filename: string): Promise<string>;
 
   /**
+   * Calculate the total size of a note (note file + assets folder)
+   * Returns the size in bytes
+   */
+  getNoteSize(noteId: string): Promise<number>;
+
+  /**
    * Subscribe to external changes (for file system adapter)
    * Returns unsubscribe function
    */

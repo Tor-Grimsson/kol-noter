@@ -8,6 +8,8 @@ import { SectionMedia } from "./sections/SectionMedia";
 import { SectionConnections } from "./sections/SectionConnections";
 import { SectionDelete } from "./sections/SectionDelete";
 import { useNotesStore } from "@/store/NotesContext";
+import { useVault } from "@/components/vault-system/VaultProvider";
+import { filesystemAdapter } from "@/lib/persistence/filesystem-adapter";
 import { Badge } from "@/components/ui-elements/atoms/Badge";
 import { Plus } from "lucide-react";
 import { SavedLink, Contact } from "@/store/NotesContext";
@@ -18,6 +20,7 @@ interface MetadataNoteProps {
 }
 
 export const MetadataNote = ({ noteId, onClose }: MetadataNoteProps) => {
+  const { isFilesystem } = useVault();
   const {
     getNote,
     updateNote,
@@ -41,6 +44,27 @@ export const MetadataNote = ({ noteId, onClose }: MetadataNoteProps) => {
   const note = getNote(noteId);
 
   const [showDummyData, setShowDummyData] = useState(false);
+  const [noteSize, setNoteSize] = useState(0);
+
+  // Calculate note size from filesystem
+  useEffect(() => {
+    if (!isFilesystem || !noteId) {
+      setNoteSize(0);
+      return;
+    }
+
+    const calculateSize = async () => {
+      try {
+        const size = await filesystemAdapter.getNoteSize(noteId);
+        setNoteSize(size);
+      } catch (err) {
+        console.error('[MetadataNote] Failed to calculate note size:', err);
+        setNoteSize(0);
+      }
+    };
+
+    calculateSize();
+  }, [noteId, isFilesystem]);
 
   // Track note in a ref for fresh access
   const noteRef = useRef(note);
@@ -162,8 +186,8 @@ export const MetadataNote = ({ noteId, onClose }: MetadataNoteProps) => {
     createdAt: Date.now(),
   }));
 
-  // Use first photo as cover, or show placeholder
-  const coverPhoto = note.photos && note.photos.length > 0 ? note.photos[0] : null;
+  // Get cover photo by ID, or show placeholder
+  const coverPhoto = note.photos?.find(p => p.id === note.coverPhotoId) || null;
 
   return (
     <MetadataSidebar>
@@ -202,11 +226,17 @@ export const MetadataNote = ({ noteId, onClose }: MetadataNoteProps) => {
               const reader = new FileReader();
               reader.onload = (event) => {
                 const dataUrl = event.target?.result as string;
+                // Add as a photo AND set as cover
+                const newPhoto = { id: `photo_${Date.now()}`, name: file.name, dataUrl, addedAt: Date.now() };
                 updateNote(noteId, {
-                  photos: [...(note.photos || []), { id: `photo_${Date.now()}`, name: file.name, dataUrl, addedAt: Date.now() }]
+                  photos: [...(note.photos || []), newPhoto],
+                  coverPhotoId: newPhoto.id
                 });
               };
               reader.readAsDataURL(file);
+            }}
+            onRemoveImage={() => {
+              updateNote(noteId, { coverPhotoId: undefined });
             }}
           />
 
@@ -217,13 +247,14 @@ export const MetadataNote = ({ noteId, onClose }: MetadataNoteProps) => {
               description={note.preview}
               type={note.customType}
               typeOptions={["Document", "Image", "Video", "Audio", "Code", "Archive"]}
-              size={0}
+              size={noteSize}
               sizeLabel="Size"
               createdAt={note.createdAt}
               updatedAt={note.updatedAt}
               onUpdateName={(name) => updateNote(noteId, { title: name })}
               onUpdateDescription={(preview) => updateNote(noteId, { preview })}
               onUpdateType={(customType) => updateNote(noteId, { customType })}
+              isSizeReadOnly
               isBottomPanel
             />
           </div>
@@ -243,7 +274,11 @@ export const MetadataNote = ({ noteId, onClose }: MetadataNoteProps) => {
               attachments={attachments}
               photos={note.photos || []}
               voiceRecordings={note.voiceRecordings || []}
-              onAddPhoto={(name, dataUrl) => addNotePhoto(noteId, name, dataUrl)}
+              onAddPhoto={(name, dataUrl) => {
+                // Save attachment to _assets folder first, then add photo reference
+                saveAttachment(noteId, name, dataUrl);
+                addNotePhoto(noteId, name, dataUrl);
+              }}
               onRemovePhoto={(id) => removeNotePhoto(noteId, id)}
               onAddAttachment={(att) => saveAttachment(noteId, att.name, att.url)}
               onRemoveAttachment={(id) => {

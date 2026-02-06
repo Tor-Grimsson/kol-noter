@@ -6,11 +6,28 @@ interface PreviewPaneProps {
   content: string;
   onClickToEdit?: () => void;
   attachments?: { [filename: string]: string };
+  photos?: Array<{ id: string; name: string; dataUrl: string; addedAt: number }>;
 }
 
 // Custom component to render Obsidian-style image embeds: ![[filename]]
-const ObsidianImage = ({ filename, attachments }: { filename: string; attachments?: { [filename: string]: string } }) => {
-  const src = attachments?.[filename];
+const ObsidianImage = ({
+  filename,
+  attachments,
+  photos
+}: {
+  filename: string;
+  attachments?: { [filename: string]: string };
+  photos?: Array<{ id: string; name: string; dataUrl: string; addedAt: number }>;
+}) => {
+  // First check attachments (file-based storage in _assets folder)
+  let src = attachments?.[filename];
+
+  // Fall back to photos array (legacy storage as data URL)
+  if (!src && photos) {
+    const photo = photos.find(p => p.name === filename);
+    src = photo?.dataUrl;
+  }
+
   if (!src) {
     return (
       <span className="inline-block px-2 py-1 bg-muted rounded text-xs text-muted-foreground">
@@ -27,7 +44,7 @@ const ObsidianImage = ({ filename, attachments }: { filename: string; attachment
   );
 };
 
-export const PreviewPane = ({ content, onClickToEdit, attachments }: PreviewPaneProps) => {
+export const PreviewPane = ({ content, onClickToEdit, attachments, photos }: PreviewPaneProps) => {
   // Process content to replace ![[filename]] with placeholder markers
   // We'll split the content and render images inline
   const processedContent = useMemo(() => {
@@ -79,7 +96,7 @@ export const PreviewPane = ({ content, onClickToEdit, attachments }: PreviewPane
         >
           {processedContent.map((part, index) => {
             if (part.type === 'image') {
-              return <ObsidianImage key={index} filename={part.value} attachments={attachments} />;
+              return <ObsidianImage key={index} filename={part.value} attachments={attachments} photos={photos} />;
             }
             return <ReactMarkdown key={index} remarkPlugins={[remarkGfm]}>{part.value}</ReactMarkdown>;
           })}

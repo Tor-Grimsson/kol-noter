@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
 import { useNotesStore } from "@/store/NotesContext";
+import { EmptyState } from "@/components/app-shell";
 import { useLocalStorage } from "@/hooks/useLocalStorage";
 import { MetadataSystem } from "@/components/metadata/MetadataSystem";
 import { MetadataRoot } from "@/components/metadata/MetadataRoot";
@@ -251,7 +252,18 @@ export const OverviewRoot = ({ onSystemSelect, onClose }: OverviewRootProps) => 
 
   const renderMainContent = () => (
     <>
-      {viewMode === "timeline" ? (
+      {systems.length === 0 ? (
+        <EmptyState
+          title="No systems yet"
+          description="Create your first system to start organizing your notes."
+          action={
+            <Button size="sm" className="gap-2" onClick={handleAddSystem}>
+              <Plus className="w-3 h-3" />
+              Create your first system
+            </Button>
+          }
+        />
+      ) : viewMode === "timeline" ? (
         <div className="flex-1 overflow-auto flex flex-col">
           <div className="p-6 flex-1 flex flex-col">
             <div className="flex items-center justify-between mb-6">

@@ -14,7 +14,8 @@
       "WebFetch(domain:medium.com)",
       "WebFetch(domain:www.npmjs.com)",
       "WebFetch(domain:obsidian.md)",
-      "WebFetch(domain:developers.obsidian.md)"
+      "WebFetch(domain:developers.obsidian.md)",
+      "mcp__playwright__browser_navigate"
     ]
   }
 }

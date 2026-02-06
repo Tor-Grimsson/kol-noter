@@ -1,5 +1,5 @@
-import { useState, useMemo, useEffect } from "react";
-import { UnifiedSidebar, Breadcrumbs, StatusBar, PageLoader } from "@/components/app-shell";
+import { useState, useMemo, useEffect, useRef } from "react";
+import { UnifiedSidebar, Breadcrumbs, StatusBar, PageLoader, EmptyState } from "@/components/app-shell";
 import type { HierarchySelectInfo } from "@/components/app-shell";
 import { NotesList, NoteTabs } from "@/components/note-browsing";
 import { BlockEditor, UnifiedMarkdownEditor, VisualEditor } from "@/components/note-editor";
@@ -10,7 +10,7 @@ import { Eye, Moon, Folder, FolderX } from "lucide-react";
 import { useNotesStore, Block, VisualNode, EditorType } from "@/store/NotesContext";
 
 const Index = () => {
-  const { systems, notes, getNote, updateNoteContent, updateNote, addNote, deleteNote, saveAttachment, addNotePhoto, isLoading } = useNotesStore();
+  const { systems, notes, getNote, updateNoteContent, updateNote, addNote, deleteNote, saveAttachment, addNotePhoto, notesRef, isLoading } = useNotesStore();
 
   const [selectedNoteId, setSelectedNoteId] = useState<string | undefined>(undefined);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -19,22 +19,14 @@ const Index = () => {
   const [invertColors, setInvertColors] = useState(false);
   const [showNoteDetails, setShowNoteDetails] = useState(false);
   const [editorType, setEditorType] = useState<EditorType>("modular");
-  const [selectedSystemId, setSelectedSystemId] = useState<string | "all">("system-1");
-  const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>("project-1");
-  const [viewMode, setViewMode] = useState<'editor' | 'overview'>('editor');
-  const [overviewTarget, setOverviewTarget] = useState<HierarchySelectInfo | null>(null);
+  const [selectedSystemId, setSelectedSystemId] = useState<string | "all">("all");
+  const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>(undefined);
+  const [viewMode, setViewMode] = useState<'editor' | 'overview'>('overview');
+  const [overviewTarget, setOverviewTarget] = useState<HierarchySelectInfo | null>({ level: 'root' });
   const [previousOverviewTarget, setPreviousOverviewTarget] = useState<HierarchySelectInfo | null>(null);
 
-  // Build tabs from notes in store
-  const [openTabs, setOpenTabs] = useState(() => {
-    // Start with first few notes as open tabs
-    return notes.slice(0, 5).map(note => ({
-      id: note.id,
-      title: note.title,
-      type: note.editorType,
-    }));
-  });
-  const [activeTabId, setActiveTabId] = useState(openTabs[0]?.id || "1");
+  const [openTabs, setOpenTabs] = useState<{ id: string; title: string; type: EditorType }[]>([]);
+  const [activeTabId, setActiveTabId] = useState("");
 
   // Sync tab titles with store notes when notes change
   useEffect(() => {
@@ -124,32 +116,36 @@ const Index = () => {
   const breadcrumbItems = useMemo(() => {
     const items: { label: string; href?: string }[] = [];
 
-    // Add system
-    if (selectedSystemId && selectedSystemId !== "all") {
-      const system = systems.find(s => s.id === selectedSystemId);
-      if (system) {
-        items.push({ label: system.name, href: `/systems/${system.id}` });
-
-        // Add project
-        if (selectedProjectId) {
-          const project = system.projects.find(p => p.id === selectedProjectId);
-          if (project) {
-            items.push({ label: project.name, href: `/projects/${project.id}` });
+    if (viewMode === 'overview' && overviewTarget) {
+      if (overviewTarget.level === 'system' && overviewTarget.id) {
+        const system = systems.find(s => s.id === overviewTarget.id);
+        if (system) items.push({ label: system.name });
+      } else if (overviewTarget.level === 'project' && overviewTarget.id) {
+        const sysId = overviewTarget.parentIds?.systemId;
+        if (sysId) {
+          const system = systems.find(s => s.id === sysId);
+          if (system) {
+            items.push({ label: system.name, href: `/systems/${system.id}` });
+            const project = system.projects.find(p => p.id === overviewTarget.id);
+            if (project) items.push({ label: project.name });
           }
         }
       }
-    } else if (selectedSystemId === "all") {
-      items.push({ label: "All Systems" });
-    }
-
-    // Add note
-    const activeTab = openTabs.find(tab => tab.id === activeTabId);
-    if (activeTab) {
-      items.push({ label: activeTab.title });
+    } else if (viewMode === 'editor' && activeTabId) {
+      const currentNote = getNote(activeTabId);
+      if (currentNote) {
+        const system = systems.find(s => s.id === currentNote.systemId);
+        if (system) {
+          items.push({ label: system.name, href: `/systems/${system.id}` });
+          const project = system.projects.find(p => p.id === currentNote.projectId);
+          if (project) items.push({ label: project.name, href: `/projects/${project.id}` });
+        }
+        items.push({ label: currentNote.title });
+      }
     }
 
     return items;
-  }, [selectedSystemId, selectedProjectId, activeTabId, openTabs]);
+  }, [viewMode, overviewTarget, activeTabId, systems, notes]);
 
   const renderEditor = () => {
     if (showNoteDetails && selectedNoteId) {
@@ -159,6 +155,10 @@ const Index = () => {
           onClose={() => setShowNoteDetails(false)}
         />
       );
+    }
+
+    if (openTabs.length === 0) {
+      return <EmptyState title="No note open" description="Select a note from the sidebar or create a new one." />;
     }
 
     const activeTab = openTabs.find(tab => tab.id === activeTabId);
@@ -212,6 +212,7 @@ const Index = () => {
             content={getTextContent()}
             onChange={(content) => handleContentChange(content)}
             attachments={currentNote?.attachments}
+            photos={currentNote?.photos}
             onSaveAttachment={handleSaveAttachment}
             onAddPhoto={(name, dataUrl) => {
               // Save attachment to _assets folder first, then add photo reference

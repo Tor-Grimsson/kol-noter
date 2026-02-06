@@ -32,6 +32,7 @@ import {
   storeVaultConfig,
   initializeVault,
   isValidVault,
+  getFileSize,
   VAULT_CONFIG_DIR,
   VAULT_ID_MAP_FILE,
   type FileEntry,
@@ -681,6 +682,37 @@ export class FilesystemAdapter implements IPersistenceAdapter {
 
     // Read binary file and return as data URL
     return readFileAsDataUrl(filePath, mimeType);
+  }
+
+  async getNoteSize(noteId: string): Promise<number> {
+    const notePath = this.idMap.notes[noteId];
+    if (!notePath) {
+      return 0;
+    }
+
+    const noteFullPath = joinPath(this.vaultPath, notePath);
+
+    // Get note file size
+    let totalSize = 0;
+    if (await pathExists(noteFullPath)) {
+      totalSize = await getFileSize(noteFullPath);
+    }
+
+    // Sum _assets folder size
+    const noteDir = getDirname(noteFullPath);
+    const assetsDir = joinPath(noteDir, FILE_PATTERNS.ASSETS_DIR);
+
+    if (await pathExists(assetsDir)) {
+      const entries = await readDirectory(assetsDir, false);
+      for (const entry of entries) {
+        if (entry.isFile) {
+          const filePath = joinPath(assetsDir, entry.name);
+          totalSize += await getFileSize(filePath);
+        }
+      }
+    }
+
+    return totalSize;
   }
 
   /**

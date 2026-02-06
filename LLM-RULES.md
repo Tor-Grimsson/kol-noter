@@ -4,12 +4,15 @@
 
 ## Session Protocol (REQUIRED)
 
-1. **Read this file** — initializes your context
-2. **Read the latest session log** — `docs/llm-context/session-logs/` (sort by filename, read the most recent)
-3. **Update MEMORY.md** — when discovering important patterns/decisions
-4. **End sessions** — by updating or creating a session log
+When the user says "read LLM-RULES" (or similar):
 
-**Do not start working until steps 1-2 are complete.**
+1. **Read this file**
+2. **Read the latest session log(s)** — `docs/llm-context/session-logs/` (sort by filename, read the most recent)
+3. **Confirm context loaded** — do NOT summarize what you read, do NOT add commentary, do NOT ask what to do next. Just confirm you're up to speed and ready for a task.
+
+During/after work:
+- **Update MEMORY.md** — when discovering important patterns/decisions
+- **End sessions** — by updating or creating a session log
 
 ## Current State
 
