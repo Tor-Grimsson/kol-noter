@@ -6,7 +6,15 @@
       "Bash(npm install:*)",
       "mcp__ide__getDiagnostics",
       "Bash(npx tsc:*)",
-      "Bash(npm run lint:*)"
+      "Bash(npm run lint:*)",
+      "WebSearch",
+      "WebFetch(domain:www.obsidian.md)",
+      "WebFetch(domain:docs.obsidian.md)",
+      "WebFetch(domain:www.youtube.com)",
+      "WebFetch(domain:medium.com)",
+      "WebFetch(domain:www.npmjs.com)",
+      "WebFetch(domain:obsidian.md)",
+      "WebFetch(domain:developers.obsidian.md)"
     ]
   }
 }

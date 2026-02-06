@@ -15,7 +15,7 @@ import type {
   Project,
   EditorType,
   ItemMetrics,
-} from '@/store/notesStore';
+} from '@/store/NotesContext';
 import type {
   NoteFrontmatter,
   SystemFrontmatter,

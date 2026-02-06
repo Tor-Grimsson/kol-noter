@@ -6,7 +6,7 @@
  */
 
 import MiniSearch, { type SearchResult } from 'minisearch';
-import type { Note, System, Project, Block } from '@/store/notesStore';
+import type { Note, System, Project, Block } from '@/store/NotesContext';
 import { isTauri, readFile, writeFile, pathExists, joinPath } from '@/lib/tauri-bridge';
 import { FILE_PATTERNS } from '@/lib/persistence/types';
 

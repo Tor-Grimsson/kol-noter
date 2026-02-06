@@ -1,10 +1,8 @@
-import { UnifiedSidebar } from "@/components/UnifiedSidebar";
-import { Breadcrumbs } from "@/components/Breadcrumbs";
-import { HierarchyContent } from "@/components/HierarchyContent";
+import { UnifiedSidebar, Breadcrumbs, HierarchyContent } from "@/components/app-shell";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/ui-elements/atoms/Button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { X } from "lucide-react";
 import ReactMarkdown from "react-markdown";

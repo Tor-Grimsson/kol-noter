@@ -11,7 +11,7 @@ import {
   EyeOff,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/ui-elements/atoms/Button";
 import { Hyperlink } from "../atoms/Hyperlink";
 import { Badge } from "../atoms/Badge";
 

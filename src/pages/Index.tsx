@@ -1,21 +1,16 @@
 import { useState, useMemo, useEffect } from "react";
-import { UnifiedSidebar, HierarchySelectInfo } from "@/components/UnifiedSidebar";
-import { NotesList } from "@/components/NotesList";
-import { BlockEditor } from "@/components/BlockEditor";
-import { UnifiedMarkdownEditor } from "@/components/UnifiedMarkdownEditor";
-import { VisualEditor } from "@/components/VisualEditor";
-import { NoteDetailsView } from "@/components/NoteDetailsView";
-import { RootOverview, SystemOverview, ProjectOverview } from "@/components/overviews";
-import { Breadcrumbs } from "@/components/Breadcrumbs";
-import { NoteTabs } from "@/components/NoteTabs";
-import { StatusBar } from "@/components/StatusBar";
-import { PageLoader } from "@/components/LoadingStates";
-import { Button } from "@/components/ui/button";
+import { UnifiedSidebar, Breadcrumbs, StatusBar, PageLoader } from "@/components/app-shell";
+import type { HierarchySelectInfo } from "@/components/app-shell";
+import { NotesList, NoteTabs } from "@/components/note-browsing";
+import { BlockEditor, UnifiedMarkdownEditor, VisualEditor } from "@/components/note-editor";
+import { MetadataNote } from "@/components/metadata/MetadataNote";
+import { OverviewRoot, OverviewSystem, OverviewProject } from "@/components/overviews";
+import { Button } from "@/components/ui-elements/atoms/Button";
 import { Eye, Moon, Folder, FolderX } from "lucide-react";
-import { useNotesStore, Block, VisualNode, EditorType } from "@/store/notesStore";
+import { useNotesStore, Block, VisualNode, EditorType } from "@/store/NotesContext";
 
 const Index = () => {
-  const { systems, notes, getNote, updateNoteContent, updateNote, addNote, deleteNote, saveAttachment, isLoading } = useNotesStore();
+  const { systems, notes, getNote, updateNoteContent, updateNote, addNote, deleteNote, saveAttachment, addNotePhoto, isLoading } = useNotesStore();
 
   const [selectedNoteId, setSelectedNoteId] = useState<string | undefined>(undefined);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -75,6 +70,7 @@ const Index = () => {
     setSelectedNoteId(noteId);
     setActiveTabId(noteId);
     setEditorType(type);
+    setShowNoteDetails(false); // Close metadata view when selecting another note
 
     const note = getNote(noteId);
     const title = note?.title || `Note ${noteId}`;
@@ -158,7 +154,7 @@ const Index = () => {
   const renderEditor = () => {
     if (showNoteDetails && selectedNoteId) {
       return (
-        <NoteDetailsView
+        <MetadataNote
           noteId={selectedNoteId}
           onClose={() => setShowNoteDetails(false)}
         />
@@ -217,6 +213,11 @@ const Index = () => {
             onChange={(content) => handleContentChange(content)}
             attachments={currentNote?.attachments}
             onSaveAttachment={handleSaveAttachment}
+            onAddPhoto={(name, dataUrl) => {
+              // Save attachment to _assets folder first, then add photo reference
+              saveAttachment(activeTabId, name, dataUrl);
+              addNotePhoto(activeTabId, name, dataUrl);
+            }}
           />
         );
       case "visual":
@@ -245,7 +246,7 @@ const Index = () => {
     switch (overviewTarget.level) {
       case 'root':
         return (
-          <RootOverview
+          <OverviewRoot
             onSystemSelect={(systemId) => {
               setSelectedSystemId(systemId);
               setSelectedProjectId(undefined);
@@ -256,7 +257,7 @@ const Index = () => {
         );
       case 'system':
         return (
-          <SystemOverview
+          <OverviewSystem
             systemId={overviewTarget.id || ''}
             onProjectSelect={(projectId) => {
               setSelectedProjectId(projectId);
@@ -277,7 +278,7 @@ const Index = () => {
       case 'project':
         const projectSystemId = overviewTarget.parentIds?.systemId || (selectedSystemId !== 'all' ? selectedSystemId : '');
         return (
-          <ProjectOverview
+          <OverviewProject
             systemId={projectSystemId}
             projectId={overviewTarget.id || ''}
             onNoteSelect={(noteId, editorType) => {
@@ -431,6 +432,7 @@ const Index = () => {
             onTabSelect={(tabId) => {
               setActiveTabId(tabId);
               setSelectedNoteId(tabId);
+              setShowNoteDetails(false); // Close metadata view when switching tabs
               setViewMode('editor');
               setOverviewTarget(null);
             }}

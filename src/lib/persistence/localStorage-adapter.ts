@@ -5,7 +5,7 @@
  * This is the fallback adapter when running in a browser without Tauri.
  */
 
-import type { System, Note, Project } from '@/store/notesStore';
+import type { System, Note, Project } from '@/store/NotesContext';
 import type { IPersistenceAdapter, VaultData } from './types';
 import { STORAGE_KEYS } from './types';
 

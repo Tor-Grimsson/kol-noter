@@ -1,9 +1,9 @@
 import { Trash2, RotateCcw, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/ui-elements/atoms/Button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { UnifiedSidebar } from "@/components/UnifiedSidebar";
-import { useNotesStore } from "@/store/notesStore";
+import { UnifiedSidebar } from "@/components/app-shell";
+import { useNotesStore } from "@/store/NotesContext";
 import {
   AlertDialog,
   AlertDialogAction,

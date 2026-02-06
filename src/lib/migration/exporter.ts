@@ -5,7 +5,7 @@
  * Handles notes, systems, projects, and attachments.
  */
 
-import type { Note, System, Project } from '@/store/notesStore';
+import type { Note, System, Project } from '@/store/NotesContext';
 import { STORAGE_KEYS } from '@/lib/persistence/types';
 import { filesystemAdapter } from '@/lib/persistence/filesystem-adapter';
 import { attachmentManager } from '@/lib/attachments';

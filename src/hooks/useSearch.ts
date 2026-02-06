@@ -6,7 +6,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { searchIndex, type SearchHit, type SearchOptions } from '@/lib/search';
-import type { Note, System } from '@/store/notesStore';
+import type { Note, System } from '@/store/NotesContext';
 
 export interface UseSearchOptions {
   /** Notes to index */

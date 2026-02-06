@@ -2,7 +2,7 @@ import * as React from "react";
 import { X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { TAG_COLOR_PRESETS, TAG_COLOR_INVERSES } from "@/store/notesStore";
+import { TAG_COLOR_PRESETS, TAG_COLOR_INVERSES } from "@/store/NotesContext";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -36,7 +36,7 @@ export function Tag({
   onColorChange,
   className,
 }: TagProps) {
-  const tagColor = color || TAG_COLOR_PRESETS[7]?.value || "#6b7280";
+  const tagColor = color || TAG_COLOR_PRESETS[0]?.value || "#6b7280";
   const inverseColor = TAG_COLOR_INVERSES[tagColor] || "#000000";
 
   const sizeStyles = {

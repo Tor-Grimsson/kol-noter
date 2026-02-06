@@ -1,4 +1,3 @@
-export { RootOverview } from "./RootOverview";
-export { SystemOverview } from "./SystemOverview";
-export { ProjectOverview } from "./ProjectOverview";
-export { TagsEditor } from "./TagsEditor";
+export { OverviewRoot } from "./OverviewRoot";
+export { OverviewSystem } from "./OverviewSystem";
+export { OverviewProject } from "./OverviewProject";

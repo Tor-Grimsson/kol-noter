@@ -2,7 +2,7 @@ import * as React from "react";
 import { ExternalLink, Edit2, Trash2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/ui-elements/atoms/Button";
 
 export interface HyperlinkProps {
   href: string;

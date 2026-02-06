@@ -5,7 +5,7 @@
  * Creates an Obsidian-compatible vault structure.
  */
 
-import type { System, Note, Project, Block, VisualNode } from '@/store/notesStore';
+import type { System, Note, Project, Block, VisualNode } from '@/store/NotesContext';
 import type {
   IPersistenceAdapter,
   VaultData,
@@ -145,7 +145,15 @@ export class FilesystemAdapter implements IPersistenceAdapter {
 
       const systemMetaPath = joinPath(entry.path, FILE_PATTERNS.SYSTEM_METADATA);
 
-      if (await pathExists(systemMetaPath)) {
+      let systemMetaExists = false;
+      try {
+        systemMetaExists = await pathExists(systemMetaPath);
+      } catch {
+        // Path not accessible - skip this entry
+        continue;
+      }
+
+      if (systemMetaExists) {
         try {
           const content = await readFile(systemMetaPath);
           const system = SystemSerializer.deserialize(content);

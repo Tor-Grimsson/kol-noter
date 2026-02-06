@@ -6,17 +6,18 @@ import { LabeledInput } from "@/components/ui-elements/atoms/LabeledInput";
 import { MediaItem, ImageThumbnail } from "@/components/ui-elements/molecules/MediaItem";
 import { HealthBadge, PriorityBadge, StatusBadge } from "@/components/ui-elements/molecules/MetricSelector";
 import { DropdownSelect } from "@/components/ui-elements/molecules/DropdownSelect";
-import { ContactCard, Contact } from "@/components/ui-elements/molecules/ContactCard";
-import { DetailTitleCard } from "@/components/ui-elements/molecules/DetailTitleCard";
+import { ContactCard, type Contact } from "@/components/metadata/sections/SectionContacts";
+import { SectionTitle } from "@/components/metadata/sections/SectionTitle";
 import { FileText, Image as ImageIcon, Mic, Download, Play, Trash2, Calendar, Link as LinkIcon, Users, AlertCircle, User, CheckCircle2, CalendarDays, Plus, Activity } from "lucide-react";
-import { MetadataSection } from "@/components/detail-view/sections/MetadataSection";
-import { MetricsSection } from "@/components/detail-view/sections/MetricsSection";
-import { MediaSection } from "@/components/detail-view/sections/MediaSection";
-import { ConnectionsSection } from "@/components/detail-view/sections/ConnectionsSection";
-import { ItemMetrics } from "@/store/notesStore";
-import { Button } from "@/components/ui/button";
+import { SectionMetadata } from "@/components/metadata/sections/SectionMetadata";
+import { SectionMetrics } from "@/components/metadata/sections/SectionMetrics";
+import { SectionMedia } from "@/components/metadata/sections/SectionMedia";
+import { SectionConnections } from "@/components/metadata/sections/SectionConnections";
+import { SectionDelete } from "@/components/metadata/sections/SectionDelete";
+import { ItemMetrics } from "@/store/NotesContext";
+import { Button } from "@/components/ui-elements/atoms/Button";
 import { cn } from "@/lib/utils";
-import { TAG_COLOR_PRESETS } from "@/store/notesStore";
+import { TAG_COLOR_PRESETS } from "@/store/NotesContext";
 
 // Shared styles for the panel
 const PANEL_STYLES = {
@@ -228,7 +229,7 @@ export default function ComponentTestPage() {
       <section className="border rounded-lg p-4 bg-[#0f0f13]">
         <h2 className="text-lg font-semibold mb-4 font-mono">MetadataSection (Bottom Panel)</h2>
         <div className="max-w-lg">
-          <MetadataSection
+          <SectionMetadata
             name={testName}
             description={testDescription}
             type={testType}
@@ -251,7 +252,7 @@ export default function ComponentTestPage() {
       <section className="border rounded-lg p-4 bg-[#0f0f13]">
         <h2 className="text-lg font-semibold mb-4 font-mono">MetricsSection (Bottom Panel)</h2>
         <div className="max-w-lg">
-          <MetricsSection
+          <SectionMetrics
             metrics={testMetrics}
             onUpdateMetrics={setTestMetrics}
             isBottomPanel
@@ -265,7 +266,7 @@ export default function ComponentTestPage() {
       <section className="border rounded-lg p-4 bg-[#0f0f13]">
         <h2 className="text-lg font-semibold mb-4 font-mono">MediaSection (Bottom Panel)</h2>
         <div className="max-w-lg">
-          <MediaSection
+          <SectionMedia
             attachments={[
               { id: "1", type: "file", url: "#", name: "document.pdf", size: 1024000, mimeType: "application/pdf", createdAt: Date.now() },
             ]}
@@ -300,7 +301,7 @@ export default function ComponentTestPage() {
       <section className="border rounded-lg p-4 bg-[#0f0f13]">
         <h2 className="text-lg font-semibold mb-4 font-mono">ConnectionsSection (Bottom Panel)</h2>
         <div className="max-w-lg">
-          <ConnectionsSection
+          <SectionConnections
             tags={["design", "ui"]}
             tagColors={{ design: "#49a0a2", ui: "#66a44c" }}
             links={[
@@ -318,6 +319,19 @@ export default function ComponentTestPage() {
             onAddContact={(contact) => console.log("Add contact", contact)}
             onRemoveContact={(id) => console.log("Remove contact", id)}
             onUpdateContact={(id, updates) => console.log("Update contact", id, updates)}
+            isBottomPanel
+          />
+        </div>
+      </section>
+
+      {/* ========================================== */}
+      {/* DELETE SECTION - Bottom Panel */}
+      {/* ========================================== */}
+      <section className="border rounded-lg p-4 bg-[#0f0f13]">
+        <h2 className="text-lg font-semibold mb-4 font-mono">DeleteSection (Bottom Panel)</h2>
+        <div className="max-w-lg">
+          <SectionDelete
+            onDelete={() => console.log("Delete clicked")}
             isBottomPanel
           />
         </div>
@@ -572,7 +586,7 @@ export default function ComponentTestPage() {
         <h2 className="text-lg font-semibold mb-4 font-mono">Detail Title Card (compact, editable)</h2>
 
         <div className="max-w-lg">
-          <DetailTitleCard
+          <SectionTitle
             title={titleCardData.title}
             subtitle={titleCardData.subtitle}
             field1Label="Email"

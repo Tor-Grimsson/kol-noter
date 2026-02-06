@@ -17,9 +17,10 @@ import {
   rename,
   exists,
   copyFile,
-  BaseDirectory
+  BaseDirectory,
+  type ReadDirOptions
 } from '@tauri-apps/plugin-fs';
-import { open, save, message, ask } from '@tauri-apps/plugin-dialog';
+import { open as openDialog, save, message, ask } from '@tauri-apps/plugin-dialog';
 import { documentDir, homeDir, appDataDir } from '@tauri-apps/api/path';
 
 // Check if we're running in Tauri
@@ -159,7 +160,11 @@ export async function pathExists(path: string): Promise<boolean> {
   if (!isTauri()) {
     return false;
   }
-  return exists(path);
+  try {
+    return await exists(path);
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -212,24 +217,44 @@ export interface FileEntry {
 
 /**
  * Read directory contents
+ *
+ * Note: Tauri v2 FS plugin API has changed significantly.
+ * We handle the API differences based on the available interface.
  */
 export async function readDirectory(path: string, recursive = false): Promise<FileEntry[]> {
   if (!isTauri()) {
     throw new Error('File system access requires Tauri');
   }
 
-  const entries = await readDir(path, { recursive });
+  try {
+    // Tauri v2 API: readDir(path, options)
+    // The options may have different structures based on the plugin version
+    let entries: any[];
 
-  // Transform Tauri's DirEntry to our FileEntry format
-  const transformEntry = (entry: any): FileEntry => ({
-    name: entry.name || '',
-    path: entry.path,
-    isDirectory: entry.isDirectory || false,
-    isFile: entry.isFile || !entry.isDirectory,
-    children: entry.children ? entry.children.map(transformEntry) : undefined
-  });
+    try {
+      // Try the newer Tauri v2 API with explicit options
+      const options: ReadDirOptions = { recursive };
+      entries = await readDir(path, options);
+    } catch {
+      // Fallback: try calling with path first argument only
+      // Some versions of tauri-plugin-fs v2 use this signature
+      entries = await (readDir as any)(path);
+    }
 
-  return entries.map(transformEntry);
+    // Transform Tauri's DirEntry to our FileEntry format
+    const transformEntry = (entry: any): FileEntry => ({
+      name: entry.name || '',
+      path: entry.path,
+      isDirectory: entry.isDirectory || false,
+      isFile: entry.isFile || !entry.isDirectory,
+      children: recursive && entry.children ? entry.children.map(transformEntry) : undefined
+    });
+
+    return entries.map(transformEntry);
+  } catch (error) {
+    console.warn('readDirectory failed, returning empty:', error);
+    return [];
+  }
 }
 
 // Dialog Operations
@@ -249,7 +274,7 @@ export async function pickVaultFolder(options: FolderPickerOptions = {}): Promis
 
   const defaultPath = options.defaultPath || await documentDir();
 
-  const selected = await open({
+  const selected = await openDialog({
     directory: true,
     multiple: false,
     title: options.title || 'Select KOL Noter Vault Folder',

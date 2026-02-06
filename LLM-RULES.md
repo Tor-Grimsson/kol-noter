@@ -1,50 +1,15 @@
 # LLM Rules — KOL-Noter
 
-> **Read this file first.** This initializes your context for working on this project.
+> **MANDATORY: Read this file + latest session log before doing anything else.**
 
-## Project Overview
+## Session Protocol (REQUIRED)
 
-**KOL-Noter** is a multi-view note-taking and project management app built with Lovable.
+1. **Read this file** — initializes your context
+2. **Read the latest session log** — `docs/llm-context/session-logs/` (sort by filename, read the most recent)
+3. **Update MEMORY.md** — when discovering important patterns/decisions
+4. **End sessions** — by updating or creating a session log
 
-- **Stack:** React 18 + TypeScript + Vite (port 8080) + Tailwind CSS + shadcn/ui
-- **State:** Local state (useState), React Query configured but minimal
-- **Routing:** React Router DOM
-- **Drag & Drop:** @dnd-kit
-
-## Quick Context Files
-
-| File | Purpose |
-|------|---------|
-| `docs/llm-context/MEMORY.md` | Living knowledge base — decisions, patterns, gotchas |
-| `docs/llm-context/CODEBASE.md` | Architecture reference — structure, data flow, key files |
-| `docs/llm-context/PREFERENCES.md` | Coding style and conventions |
-| `docs/llm-context/session-logs/` | Work session history |
-
-## Hard Rules
-
-### Code Style
-- [ ] Use TypeScript (`.tsx` / `.ts`) — owner is learning TS, keep types simple
-- [ ] Prefer `any` over complex generics when stuck
-- [ ] Use existing shadcn/ui components from `src/components/ui/`
-- [ ] Follow existing patterns in the codebase
-
-### File Organization
-- [ ] Pages go in `src/pages/`
-- [ ] Reusable components go in `src/components/`
-- [ ] UI primitives stay in `src/components/ui/`
-- [ ] Hooks go in `src/hooks/`
-
-### Forbidden
-- [ ] Don't create new files unless necessary — prefer editing existing
-- [ ] Don't add dependencies without asking
-- [ ] Don't refactor code that isn't related to the current task
-- [ ] Don't over-engineer — keep it simple
-
-### Session Protocol
-1. On session start: Read this file
-2. Check `docs/llm-context/session-logs/` for recent context
-3. Update MEMORY.md when discovering important patterns/decisions
-4. End sessions by updating or creating a session log
+**Do not start working until steps 1-2 are complete.**
 
 ## Current State
 

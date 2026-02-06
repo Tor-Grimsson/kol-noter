@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/ui-elements/atoms/Button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { 
   Folder, 

@@ -165,7 +165,8 @@ export async function startWatching(vaultPath: string): Promise<boolean> {
     console.log(`File watcher started for: ${vaultPath}`);
     return true;
   } catch (error) {
-    console.error('Failed to start file watcher:', error);
+    // File watcher not available in this environment - that's ok
+    console.warn('File watcher not available:', error);
     return false;
   }
 }

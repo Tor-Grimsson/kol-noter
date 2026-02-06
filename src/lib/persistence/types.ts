@@ -5,7 +5,7 @@
  * by different backends (localStorage, file system, etc.)
  */
 
-import type { System, Note, Project, EditorType } from '@/store/notesStore';
+import type { System, Note, Project, EditorType } from '@/store/NotesContext';
 
 /**
  * Result of a vault load operation
@@ -263,7 +263,7 @@ export const FILE_PATTERNS = {
   SYSTEM_METADATA: '_system.md',
   PROJECT_METADATA: '_project.md',
   VISUAL_SIDECAR_SUFFIX: '.visual.json',
-  ASSETS_DIR: 'assets',
+  ASSETS_DIR: '_assets',
   CONFIG_DIR: '.kol-noter',
   ID_MAP_FILE: 'id-map.json',
   SEARCH_INDEX_FILE: 'search-index.json',

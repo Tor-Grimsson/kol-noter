@@ -10,6 +10,7 @@
     "core:window:allow-close",
     "core:window:allow-set-title",
     "dialog:default",
+    "fs:default",
     {
       "identifier": "fs:allow-mkdir",
       "allow": [{ "path": "$HOME" }, { "path": "$HOME/**/*" }]
