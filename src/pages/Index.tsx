@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { UnifiedSidebar, Breadcrumbs, StatusBar, PageLoader, EmptyState } from "@/components/app-shell";
+import { ExplorerSidebar, Breadcrumbs, StatusBar, PageLoader, EmptyState } from "@/components/app-shell";
 import type { HierarchySelectInfo } from "@/components/app-shell";
 import { NotesList, NoteTabs } from "@/components/note-browsing";
 import { BlockEditor, UnifiedMarkdownEditor, VisualEditor } from "@/components/note-editor";
@@ -8,9 +8,13 @@ import { OverviewRoot, OverviewSystem, OverviewProject } from "@/components/over
 import { Button } from "@/components/ui-elements/atoms/Button";
 import { Eye, Moon, Folder, FolderX } from "lucide-react";
 import { useNotesStore, Block, VisualNode, EditorType } from "@/store/NotesContext";
+import { useVault } from "@/components/vault-system/VaultProvider";
+import { getNoteAssetBasePath } from "@/lib/persistence/asset-resolver";
+import { filesystemAdapter } from "@/lib/persistence/filesystem-adapter";
 
 const Index = () => {
   const { systems, notes, getNote, updateNoteContent, updateNote, addNote, deleteNote, saveAttachment, addNotePhoto, notesRef, isLoading } = useNotesStore();
+  const { isFilesystem, vaultPath } = useVault();
 
   const [selectedNoteId, setSelectedNoteId] = useState<string | undefined>(undefined);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -174,17 +178,14 @@ const Index = () => {
           return currentNote.content as Block[];
         }
       }
-      return [
-        { id: "1", type: "heading", content: "New Note", metadata: { level: 1 } },
-        { id: "2", type: "paragraph", content: "Start writing here..." },
-      ];
+      return [];
     };
 
     const getTextContent = (): string => {
       if (currentNote?.content && typeof currentNote.content === "string") {
         return currentNote.content;
       }
-      return "# New Note\n\nStart writing here...";
+      return "";
     };
 
     const getVisualContent = (): VisualNode[] => {
@@ -196,6 +197,15 @@ const Index = () => {
       }
       return [{ id: "1", type: "start", label: "Start", x: 200, y: 100 }];
     };
+
+    // Compute asset base path for filesystem mode image resolution
+    let noteAssetBasePath: string | undefined;
+    if (isFilesystem && vaultPath && activeTabId) {
+      const relPath = filesystemAdapter.getNoteRelativePath(activeTabId);
+      if (relPath) {
+        noteAssetBasePath = getNoteAssetBasePath(vaultPath, relPath);
+      }
+    }
 
     // Create a handler for saving attachments for the current note
     const handleSaveAttachment = (filename: string, dataUrl: string) => {
@@ -215,10 +225,9 @@ const Index = () => {
             photos={currentNote?.photos}
             onSaveAttachment={handleSaveAttachment}
             onAddPhoto={(name, dataUrl) => {
-              // Save attachment to _assets folder first, then add photo reference
-              saveAttachment(activeTabId, name, dataUrl);
               addNotePhoto(activeTabId, name, dataUrl);
             }}
+            noteAssetBasePath={noteAssetBasePath}
           />
         );
       case "visual":
@@ -330,7 +339,7 @@ const Index = () => {
     >
       <div className="flex flex-1 overflow-hidden">
       {!focusMode && (
-        <UnifiedSidebar
+        <ExplorerSidebar
           collapsed={sidebarCollapsed}
           onNoteSelect={(noteId, type) => {
             handleNoteSelect(noteId, type);

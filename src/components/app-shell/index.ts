@@ -1,5 +1,5 @@
-export { UnifiedSidebar } from "./UnifiedSidebar";
-export type { HierarchySelectInfo, HierarchyLevel } from "./UnifiedSidebar";
+export { ExplorerSidebar } from "./ExplorerSidebar";
+export type { HierarchySelectInfo, HierarchyLevel } from "./ExplorerSidebar";
 export { Breadcrumbs } from "./Breadcrumbs";
 export { StatusBar } from "./StatusBar";
 export { HierarchyContent } from "./HierarchyContent";

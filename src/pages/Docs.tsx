@@ -1,4 +1,4 @@
-import { UnifiedSidebar, Breadcrumbs, HierarchyContent } from "@/components/app-shell";
+import { ExplorerSidebar, Breadcrumbs, HierarchyContent } from "@/components/app-shell";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
@@ -201,7 +201,7 @@ const Docs = () => {
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background">
-      <UnifiedSidebar
+      <ExplorerSidebar
         collapsed={sidebarCollapsed}
         onNoteSelect={handleExplorerSelect}
         selectedNoteId={undefined}

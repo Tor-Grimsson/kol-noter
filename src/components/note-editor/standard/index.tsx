@@ -6,7 +6,10 @@ import {
 } from "@/components/ui/resizable";
 import { Toolbar } from "./Toolbar";
 import { EditPane } from "./EditPane";
-import { PreviewPane } from "./PreviewPane";
+import { WysiwygPane } from "./WysiwygPane";
+import type { Editor } from "@tiptap/react";
+
+type ViewMode = "wysiwyg" | "source" | "split";
 
 interface UnifiedMarkdownEditorProps {
   content?: string;
@@ -16,52 +19,8 @@ interface UnifiedMarkdownEditorProps {
   photos?: Array<{ id: string; name: string; dataUrl: string; addedAt: number }>;
   onSaveAttachment?: (filename: string, dataUrl: string) => void;
   onAddPhoto?: (name: string, dataUrl: string) => void;
+  noteAssetBasePath?: string;
 }
-
-const defaultContent = `# Welcome to Unified Markdown Editor
-
-This editor combines **editing** and **preview** in one seamless experience.
-
-## Features
-
-- **Edit mode**: Write markdown with live syntax styling
-- **Preview mode**: See rendered output with beautiful typography
-- **Split mode**: Side-by-side editing and preview
-
-## Markdown Syntax
-
-### Text Formatting
-
-- **Bold text** with \`**text**\`
-- *Italic text* with \`*text*\`
-- \`Inline code\` with backticks
-
-### Lists
-
-1. Ordered lists
-2. With numbers
-
-- Unordered lists
-- With dashes
-
-### Code Blocks
-
-\`\`\`javascript
-function hello() {
-  console.log("Hello, world!");
-}
-\`\`\`
-
-### Links and Images
-
-[Link text](https://example.com)
-
-![Image alt text](image-url)
-
----
-
-Start editing to see the magic!
-`;
 
 export const UnifiedMarkdownEditor = ({
   content: propContent,
@@ -71,11 +30,11 @@ export const UnifiedMarkdownEditor = ({
   photos,
   onSaveAttachment,
   onAddPhoto,
+  noteAssetBasePath,
 }: UnifiedMarkdownEditorProps) => {
-  const [content, setContent] = useState(propContent ?? defaultContent);
-  const [showPreview, setShowPreview] = useState(false);
-  const [showSplit, setShowSplit] = useState(false);
-  const [showLineNumbers, setShowLineNumbers] = useState(true);
+  const [content, setContent] = useState(propContent ?? "");
+  const [viewMode, setViewMode] = useState<ViewMode>("wysiwyg");
+  const [tiptapEditor, setTiptapEditor] = useState<Editor | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const debounceRef = useRef<NodeJS.Timeout>();
 
@@ -101,6 +60,7 @@ export const UnifiedMarkdownEditor = ({
     [onChange]
   );
 
+  // Source mode: insert markdown syntax around selection in textarea
   const insertMarkdown = useCallback(
     (syntax: string, placeholder = "") => {
       const textarea = textareaRef.current;
@@ -121,6 +81,10 @@ export const UnifiedMarkdownEditor = ({
         case "italic":
           newText = `*${selectedText}*`;
           cursorOffset = 1;
+          break;
+        case "underline":
+          newText = `<u>${selectedText}</u>`;
+          cursorOffset = 3;
           break;
         case "code":
           newText = `\`${selectedText}\``;
@@ -157,23 +121,20 @@ export const UnifiedMarkdownEditor = ({
     [content, handleContentChange]
   );
 
-  const handleClickToEdit = useCallback(() => {
-    setShowPreview(false);
-    setTimeout(() => {
-      textareaRef.current?.focus();
-    }, 0);
+  const handleEditorReady = useCallback((editor: Editor) => {
+    setTiptapEditor(editor);
   }, []);
 
   const renderContent = () => {
-    // Split mode: show both side by side
-    if (showSplit) {
+    // Split mode: source on left, WYSIWYG on right
+    if (viewMode === "split") {
       return (
         <ResizablePanelGroup direction="horizontal" className="flex-1 h-full">
           <ResizablePanel defaultSize={50} minSize={30} className="h-full">
             <EditPane
               content={content}
               onChange={handleContentChange}
-              showLineNumbers={showLineNumbers}
+              showLineNumbers={true}
               textareaRef={textareaRef}
               onSaveAttachment={onSaveAttachment}
               onAddPhoto={onAddPhoto}
@@ -181,28 +142,44 @@ export const UnifiedMarkdownEditor = ({
           </ResizablePanel>
           <ResizableHandle withHandle />
           <ResizablePanel defaultSize={50} minSize={30} className="h-full">
-            <PreviewPane content={content} attachments={attachments} photos={photos} />
+            <WysiwygPane
+              content={content}
+              onChange={handleContentChange}
+              attachments={attachments}
+              photos={photos}
+              onAddPhoto={onAddPhoto}
+              noteAssetBasePath={noteAssetBasePath}
+              onEditorReady={handleEditorReady}
+            />
           </ResizablePanel>
         </ResizablePanelGroup>
       );
     }
 
-    // Preview only
-    if (showPreview) {
+    // Source mode: raw markdown textarea
+    if (viewMode === "source") {
       return (
-        <PreviewPane content={content} onClickToEdit={handleClickToEdit} attachments={attachments} photos={photos} />
+        <EditPane
+          content={content}
+          onChange={handleContentChange}
+          showLineNumbers={true}
+          textareaRef={textareaRef}
+          onSaveAttachment={onSaveAttachment}
+          onAddPhoto={onAddPhoto}
+        />
       );
     }
 
-    // Edit only (default)
+    // WYSIWYG mode (default)
     return (
-      <EditPane
+      <WysiwygPane
         content={content}
         onChange={handleContentChange}
-        showLineNumbers={showLineNumbers}
-        textareaRef={textareaRef}
-        onSaveAttachment={onSaveAttachment}
+        attachments={attachments}
+        photos={photos}
         onAddPhoto={onAddPhoto}
+        noteAssetBasePath={noteAssetBasePath}
+        onEditorReady={handleEditorReady}
       />
     );
   };
@@ -215,12 +192,9 @@ export const UnifiedMarkdownEditor = ({
     >
       {!focusMode && (
         <Toolbar
-          showPreview={showPreview}
-          showSplit={showSplit}
-          showLineNumbers={showLineNumbers}
-          onPreviewToggle={() => setShowPreview(!showPreview)}
-          onSplitToggle={() => setShowSplit(!showSplit)}
-          onLineNumbersToggle={() => setShowLineNumbers(!showLineNumbers)}
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
+          editor={tiptapEditor}
           onInsertMarkdown={insertMarkdown}
         />
       )}

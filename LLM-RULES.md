@@ -16,9 +16,9 @@ During/after work:
 
 ## Current State
 
-- **Status:** Implementing Local-First Markdown Architecture
-- **Last Session:** 2026-02-05
-- **Active Work:** Tauri integration (Phases 0-2 complete, 3-7 pending)
+- **Status:** SQLite index layer implemented, ready for runtime testing
+- **Last Session:** 2026-02-08
+- **Active Work:** SQLite index layer complete (replaces React useState with SQLite + React Query). Stale closure bug fix.
 - **Roadmap:** See `docs/roadmap/local-first-markdown-architecture.md`
 
 ## Data Hierarchy (Important)

@@ -13,6 +13,8 @@ import { initializePersistence, getActiveAdapter, isUsingFilesystem } from '@/li
 import { filesystemAdapter } from '@/lib/persistence/filesystem-adapter';
 import { fileWatcher } from '@/lib/watcher';
 import { searchIndex } from '@/lib/search';
+import { getDb } from '@/lib/db/client';
+import { fullReindex } from '@/lib/db/indexer';
 import { MigrationWizard } from './MigrationWizard';
 import { hasLocalStorageData } from '@/lib/migration';
 
@@ -91,15 +93,26 @@ export function VaultProvider({ children }: VaultProviderProps) {
       const path = await initializePersistence();
 
       if (path) {
-        // Vault found - switch from setup to ready
         setVaultPath(path);
-        setAppState('ready');
 
         // Start file watcher
         await fileWatcher.start(path);
 
         // Initialize search index vault path
         searchIndex.setVaultPath(path);
+
+        // Initialize SQLite index BEFORE rendering children
+        // (children read from SQLite, so it must be populated first)
+        try {
+          const db = await getDb(path);
+          const data = await filesystemAdapter.loadAll();
+          await fullReindex(db, data);
+        } catch (err) {
+          console.error('[VaultProvider] Failed to initialize SQLite index:', err);
+        }
+
+        // Now safe to render children — SQLite has data
+        setAppState('ready');
       } else {
         // No vault configured - stay in setup mode
         setAppState('setup');
@@ -130,12 +143,22 @@ export function VaultProvider({ children }: VaultProviderProps) {
 
       await filesystemAdapter.setVaultPath(selected, false);
       setVaultPath(selected);
-      setAppState('ready');
       setError(null);
 
       // Start file watcher
       await fileWatcher.start(selected);
       searchIndex.setVaultPath(selected);
+
+      // Initialize SQLite index BEFORE rendering children
+      try {
+        const db = await getDb(selected);
+        const data = await filesystemAdapter.loadAll();
+        await fullReindex(db, data);
+      } catch (err) {
+        console.error('[VaultProvider] Failed to initialize SQLite index:', err);
+      }
+
+      setAppState('ready');
     } catch (err) {
       setError(String(err));
     }
@@ -154,12 +177,21 @@ export function VaultProvider({ children }: VaultProviderProps) {
 
       await filesystemAdapter.setVaultPath(selected, true);
       setVaultPath(selected);
-      setAppState('ready');
       setError(null);
 
       // Start file watcher
       await fileWatcher.start(selected);
       searchIndex.setVaultPath(selected);
+
+      // Initialize SQLite index (empty vault) BEFORE rendering children
+      try {
+        const db = await getDb(selected);
+        await fullReindex(db, { systems: [], notes: [], trash: [] });
+      } catch (err) {
+        console.error('[VaultProvider] Failed to initialize SQLite index:', err);
+      }
+
+      setAppState('ready');
 
       // Note: We don't auto-migrate localStorage data to new vaults.
       // If user wants to migrate, they can use the migration option from the menu.

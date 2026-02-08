@@ -258,7 +258,7 @@ export async function readDirectory(path: string, recursive = false): Promise<Fi
     // Transform Tauri's DirEntry to our FileEntry format
     const transformEntry = (entry: any): FileEntry => ({
       name: entry.name || '',
-      path: entry.path,
+      path: `${path}/${entry.name || ''}`.replace(/\/+/g, '/'),
       isDirectory: entry.isDirectory || false,
       isFile: entry.isFile || !entry.isDirectory,
       children: recursive && entry.children ? entry.children.map(transformEntry) : undefined

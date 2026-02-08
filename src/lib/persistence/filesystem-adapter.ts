@@ -102,6 +102,14 @@ export class FilesystemAdapter implements IPersistenceAdapter {
     return this.vaultPath;
   }
 
+  /**
+   * Get the relative path for a note from the idMap.
+   * Returns undefined if the note is not in the map.
+   */
+  getNoteRelativePath(noteId: string): string | undefined {
+    return this.idMap.notes[noteId];
+  }
+
   private async loadIdMap(): Promise<void> {
     const idMapPath = joinPath(this.vaultPath, VAULT_CONFIG_DIR, VAULT_ID_MAP_FILE);
 
@@ -304,13 +312,47 @@ export class FilesystemAdapter implements IPersistenceAdapter {
           visualData = JSON.parse(sidecarContent);
         }
 
-        const note = NoteSerializer.deserialize(content, visualData);
+        const note = NoteSerializer.deserialize(content, visualData, removeExtension(entry.name));
         note.systemId = systemId;
         note.projectId = projectId;
 
         // Update ID map
         const relativePath = entry.path.replace(this.vaultPath + '/', '');
         this.idMap.notes[note.id] = relativePath;
+
+        // Scan _assets directory — discover files not already listed in frontmatter.
+        // Photos and files from frontmatter are already populated by the deserializer.
+        // Images are resolved at render time via convertFileSrc (asset protocol).
+        const noteDir = getDirname(entry.path);
+        const assetsDir = joinPath(noteDir, FILE_PATTERNS.ASSETS_DIR);
+        if (await pathExists(assetsDir)) {
+          try {
+            const assetEntries = await readDirectory(assetsDir, false);
+            const filenames = assetEntries
+              .filter(a => !a.isDirectory && !a.name.startsWith('.'))
+              .map(a => a.name);
+
+            // Build set of filenames already known from frontmatter
+            const knownFiles = new Set<string>();
+            if (note.photos) {
+              for (const p of note.photos) knownFiles.add(p.name);
+            }
+            if (note.attachments) {
+              for (const f of Object.keys(note.attachments)) knownFiles.add(f);
+            }
+
+            // Merge unknown files into attachments as fallback
+            const unknownFiles = filenames.filter(f => !knownFiles.has(f));
+            if (unknownFiles.length > 0) {
+              if (!note.attachments) note.attachments = {};
+              for (const name of unknownFiles) {
+                note.attachments[name] = '';
+              }
+            }
+          } catch {
+            // _assets dir unreadable, skip
+          }
+        }
 
         notes.push(note);
       } catch (e) {
@@ -713,6 +755,122 @@ export class FilesystemAdapter implements IPersistenceAdapter {
     }
 
     return totalSize;
+  }
+
+  // ── Rename operations ──────────────────────────────────────────────
+
+  /**
+   * Rename a system folder on disk and update all child paths in the idMap.
+   */
+  async renameSystem(systemId: string, newName: string): Promise<void> {
+    const oldFolder = this.idMap.systems[systemId];
+    if (!oldFolder) return;
+
+    const existingFolders = Object.values(this.idMap.systems).filter(f => f !== oldFolder);
+    const newFolder = await ensureUniqueSlug(generateSlug(newName), existingFolders);
+
+    if (newFolder === oldFolder) return;
+
+    const oldPath = joinPath(this.vaultPath, oldFolder);
+    const newPath = joinPath(this.vaultPath, newFolder);
+    await renamePath(oldPath, newPath);
+
+    // Update idMap: system
+    this.idMap.systems[systemId] = newFolder;
+
+    // Update idMap: child projects (oldFolder/projectSlug -> newFolder/projectSlug)
+    for (const [projectId, projectPath] of Object.entries(this.idMap.projects)) {
+      if (projectPath.startsWith(oldFolder + '/')) {
+        this.idMap.projects[projectId] = newFolder + projectPath.slice(oldFolder.length);
+      }
+    }
+
+    // Update idMap: child notes
+    for (const [noteId, notePath] of Object.entries(this.idMap.notes)) {
+      if (notePath.startsWith(oldFolder + '/')) {
+        this.idMap.notes[noteId] = newFolder + notePath.slice(oldFolder.length);
+      }
+    }
+
+    await this.saveIdMap();
+  }
+
+  /**
+   * Rename a project folder on disk and update all child paths in the idMap.
+   */
+  async renameProject(projectId: string, newName: string): Promise<void> {
+    const oldRelPath = this.idMap.projects[projectId];
+    if (!oldRelPath) return;
+
+    const parts = oldRelPath.split('/');
+    const systemFolder = parts[0];
+    const oldProjectFolder = parts[1];
+
+    // Get existing sibling project folders for uniqueness check
+    const siblingFolders = Object.values(this.idMap.projects)
+      .filter(p => p.startsWith(systemFolder + '/') && p !== oldRelPath)
+      .map(p => p.split('/')[1]);
+
+    const newProjectFolder = await ensureUniqueSlug(generateSlug(newName), siblingFolders);
+
+    if (newProjectFolder === oldProjectFolder) return;
+
+    const oldPath = joinPath(this.vaultPath, oldRelPath);
+    const newRelPath = `${systemFolder}/${newProjectFolder}`;
+    const newPath = joinPath(this.vaultPath, newRelPath);
+    await renamePath(oldPath, newPath);
+
+    // Update idMap: project
+    this.idMap.projects[projectId] = newRelPath;
+
+    // Update idMap: child notes
+    for (const [noteId, notePath] of Object.entries(this.idMap.notes)) {
+      if (notePath.startsWith(oldRelPath + '/')) {
+        this.idMap.notes[noteId] = newRelPath + notePath.slice(oldRelPath.length);
+      }
+    }
+
+    await this.saveIdMap();
+  }
+
+  /**
+   * Rename a note file on disk (and its visual sidecar if present).
+   */
+  async renameNote(noteId: string, newTitle: string): Promise<void> {
+    const oldRelPath = this.idMap.notes[noteId];
+    if (!oldRelPath) return;
+
+    const dir = getDirname(oldRelPath);
+    const oldFilename = getFilename(oldRelPath);
+    const oldSlug = removeExtension(oldFilename);
+
+    // Get existing sibling note files for uniqueness check
+    const siblingFiles = Object.values(this.idMap.notes)
+      .filter(p => getDirname(p) === dir && p !== oldRelPath)
+      .map(p => removeExtension(getFilename(p)));
+
+    const newSlug = await ensureUniqueSlug(generateSlug(newTitle || 'untitled'), siblingFiles);
+
+    if (newSlug === oldSlug) return;
+
+    const newFilename = newSlug + '.md';
+    const newRelPath = dir ? `${dir}/${newFilename}` : newFilename;
+
+    // Rename .md file
+    const oldFullPath = joinPath(this.vaultPath, oldRelPath);
+    const newFullPath = joinPath(this.vaultPath, newRelPath);
+    await renamePath(oldFullPath, newFullPath);
+
+    // Rename visual sidecar if it exists
+    const oldSidecarPath = removeExtension(oldFullPath) + FILE_PATTERNS.VISUAL_SIDECAR_SUFFIX;
+    if (await pathExists(oldSidecarPath)) {
+      const newSidecarPath = removeExtension(newFullPath) + FILE_PATTERNS.VISUAL_SIDECAR_SUFFIX;
+      await renamePath(oldSidecarPath, newSidecarPath);
+    }
+
+    // Update idMap
+    this.idMap.notes[noteId] = newRelPath;
+    await this.saveIdMap();
   }
 
   /**

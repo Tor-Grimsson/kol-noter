@@ -1,18 +1,12 @@
 import { useState, useEffect, useRef } from "react";
-import { Search, Plus, GripVertical, FileText, Network, Boxes, X } from "lucide-react";
+import { Search, GripVertical, X } from "lucide-react";
 import { NoteCard } from "./NoteCard";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui-elements/atoms/Button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { useNotesStore, EditorType } from "@/store/NotesContext";
 import { NotesListSkeleton } from "@/components/app-shell/LoadingStates";
+import { NoteTypeDropdown } from "@/components/ui-elements/molecules/NoteTypeDropdown";
 
 interface NotesListProps {
   onNoteSelect: (noteId: string, type?: EditorType) => void;
@@ -124,45 +118,7 @@ export const NotesList = ({ onNoteSelect, selectedNoteId, onCardFlip, filterSyst
       <div className="p-4 border-b border-border">
         <div className="flex items-center justify-between">
           <h2 className="text-xs font-semibold text-foreground">Notes</h2>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button size="icon" variant="ghost" className="w-8 h-8 hover:bg-list-item">
-                <Plus className="w-4 h-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-64 bg-background border-border z-50">
-              <DropdownMenuItem
-                className="flex items-start gap-3 p-3 cursor-pointer"
-                onClick={() => handleCreateNote("standard")}
-              >
-                <FileText className="w-4 h-4 text-foreground mt-0" />
-                <div className="flex-1">
-                  <div className="font-medium text-xs">Standard</div>
-                  <div className="text-xs text-muted-foreground">Markdown editor</div>
-                </div>
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                className="flex items-start gap-3 p-3 cursor-pointer"
-                onClick={() => handleCreateNote("modular")}
-              >
-                <Boxes className="w-4 h-4 text-foreground mt-0" />
-                <div className="flex-1">
-                  <div className="font-medium text-xs">Modular</div>
-                  <div className="text-xs text-muted-foreground">Rearrangeable blocks</div>
-                </div>
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                className="flex items-start gap-3 p-3 cursor-pointer"
-                onClick={() => handleCreateNote("visual")}
-              >
-                <Network className="w-4 h-4 text-foreground mt-0" />
-                <div className="flex-1">
-                  <div className="font-medium text-xs">Visual</div>
-                  <div className="text-xs text-muted-foreground">Node-based flowchart</div>
-                </div>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <NoteTypeDropdown onSelect={handleCreateNote} align="end" />
         </div>
       </div>
 

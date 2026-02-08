@@ -12,7 +12,15 @@ import Trash from "./pages/Trash";
 import ComponentTest from "./pages/component-test";
 import NotFound from "./pages/NotFound";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // All data is local SQLite — no need to refetch on focus.
+      // Mutations use optimistic updates + invalidation instead.
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
 const App = () => (
   <QueryClientProvider client={queryClient}>

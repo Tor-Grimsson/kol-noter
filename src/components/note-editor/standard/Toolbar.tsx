@@ -1,15 +1,15 @@
 import { Button } from "@/components/ui-elements/atoms/Button";
 import {
-  Eye,
   Columns,
-  Hash,
   Bold,
   Italic,
+  Underline as UnderlineIcon,
   Code,
   List,
   Link,
   Image,
   Mic,
+  FileCode,
 } from "lucide-react";
 import {
   Sheet,
@@ -20,26 +20,94 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { VoiceRecorder } from "./VoiceRecorder";
+import type { Editor } from "@tiptap/react";
+
+type ViewMode = "wysiwyg" | "source" | "split";
 
 interface ToolbarProps {
-  showPreview: boolean;
-  showSplit: boolean;
-  showLineNumbers: boolean;
-  onPreviewToggle: () => void;
-  onSplitToggle: () => void;
-  onLineNumbersToggle: () => void;
-  onInsertMarkdown: (syntax: string, placeholder?: string) => void;
+  viewMode: ViewMode;
+  onViewModeChange: (mode: ViewMode) => void;
+  /** TipTap editor instance — when available, formatting buttons use editor commands */
+  editor?: Editor | null;
+  /** Fallback for source mode (raw textarea manipulation) */
+  onInsertMarkdown?: (syntax: string, placeholder?: string) => void;
 }
 
 export const Toolbar = ({
-  showPreview,
-  showSplit,
-  showLineNumbers,
-  onPreviewToggle,
-  onSplitToggle,
-  onLineNumbersToggle,
+  viewMode,
+  onViewModeChange,
+  editor,
   onInsertMarkdown,
 }: ToolbarProps) => {
+  const isSource = viewMode === "source";
+  const hasEditor = !!editor && !isSource;
+
+  const handleFormat = (syntax: string, placeholder?: string) => {
+    if (hasEditor) {
+      switch (syntax) {
+        case "bold":
+          editor!.chain().focus().toggleBold().run();
+          break;
+        case "italic":
+          editor!.chain().focus().toggleItalic().run();
+          break;
+        case "underline":
+          editor!.chain().focus().toggleUnderline().run();
+          break;
+        case "code":
+          editor!.chain().focus().toggleCode().run();
+          break;
+        case "list":
+          editor!.chain().focus().toggleBulletList().run();
+          break;
+        case "link": {
+          if (editor!.isActive("link")) {
+            editor!.chain().focus().unsetLink().run();
+          } else {
+            const url = window.prompt("URL:");
+            if (url) {
+              editor!.chain().focus().setLink({ href: url }).run();
+            }
+          }
+          break;
+        }
+        case "image": {
+          const src = window.prompt("Image URL:");
+          if (src) {
+            editor!.chain().focus().setImage({ src }).run();
+          }
+          break;
+        }
+      }
+    } else if (onInsertMarkdown) {
+      onInsertMarkdown(syntax, placeholder);
+    }
+  };
+
+  const isActive = (name: string): boolean => {
+    if (!hasEditor) return false;
+    return editor!.isActive(name);
+  };
+
+  const handleSourceToggle = () => {
+    if (viewMode === "source") {
+      onViewModeChange("wysiwyg");
+    } else if (viewMode === "wysiwyg") {
+      onViewModeChange("source");
+    } else {
+      // In split mode, toggle back to wysiwyg
+      onViewModeChange("source");
+    }
+  };
+
+  const handleSplitToggle = () => {
+    if (viewMode === "split") {
+      onViewModeChange("wysiwyg");
+    } else {
+      onViewModeChange("split");
+    }
+  };
+
   return (
     <div className="sticky top-0 z-10 bg-card/80 backdrop-blur-sm border-b border-border/50 px-4 py-2 flex items-center gap-1">
       {/* Voice Memo */}
@@ -64,21 +132,21 @@ export const Toolbar = ({
 
       <div className="w-px h-6 mx-1 bg-border/30" />
 
-      {/* View Toggles */}
+      {/* View Mode Toggles */}
       <Button
-        variant={showPreview ? "secondary" : "ghost"}
+        variant={viewMode === "source" ? "secondary" : "ghost"}
         size="sm"
-        onClick={onPreviewToggle}
-        title="Toggle Preview"
+        onClick={handleSourceToggle}
+        title="Source"
         className="h-8 w-8 p-0"
       >
-        <Eye className="w-4 h-4" />
+        <FileCode className="w-4 h-4" />
       </Button>
       <Button
-        variant={showSplit ? "secondary" : "ghost"}
+        variant={viewMode === "split" ? "secondary" : "ghost"}
         size="sm"
-        onClick={onSplitToggle}
-        title="Toggle Split View"
+        onClick={handleSplitToggle}
+        title="Split View"
         className="h-8 w-8 p-0"
       >
         <Columns className="w-4 h-4" />
@@ -86,77 +154,67 @@ export const Toolbar = ({
 
       <div className="w-px h-6 mx-1 bg-border/30" />
 
-      {/* Line Numbers Toggle */}
-      <Button
-        variant={showLineNumbers ? "secondary" : "ghost"}
-        size="sm"
-        onClick={onLineNumbersToggle}
-        title="Toggle Line Numbers"
-        className="h-8 w-8 p-0"
-      >
-        <Hash className="w-4 h-4" />
-      </Button>
-
-      <div className="w-px h-6 mx-1 bg-border/30" />
-
       {/* Formatting Buttons */}
       <Button
-        variant="ghost"
+        variant={isActive("bold") ? "secondary" : "ghost"}
         size="sm"
-        onClick={() => onInsertMarkdown("bold", "bold text")}
+        onClick={() => handleFormat("bold", "bold text")}
         title="Bold"
         className="h-8 w-8 p-0"
-        disabled={showPreview && !showSplit}
       >
         <Bold className="w-4 h-4" />
       </Button>
       <Button
-        variant="ghost"
+        variant={isActive("italic") ? "secondary" : "ghost"}
         size="sm"
-        onClick={() => onInsertMarkdown("italic", "italic text")}
+        onClick={() => handleFormat("italic", "italic text")}
         title="Italic"
         className="h-8 w-8 p-0"
-        disabled={showPreview && !showSplit}
       >
         <Italic className="w-4 h-4" />
       </Button>
       <Button
-        variant="ghost"
+        variant={isActive("underline") ? "secondary" : "ghost"}
         size="sm"
-        onClick={() => onInsertMarkdown("code", "code")}
-        title="Code"
+        onClick={() => handleFormat("underline", "underlined text")}
+        title="Underline"
         className="h-8 w-8 p-0"
-        disabled={showPreview && !showSplit}
+      >
+        <UnderlineIcon className="w-4 h-4" />
+      </Button>
+      <Button
+        variant={isActive("code") ? "secondary" : "ghost"}
+        size="sm"
+        onClick={() => handleFormat("code", "code")}
+        title="Inline Code"
+        className="h-8 w-8 p-0"
       >
         <Code className="w-4 h-4" />
       </Button>
       <Button
-        variant="ghost"
+        variant={isActive("bulletList") ? "secondary" : "ghost"}
         size="sm"
-        onClick={() => onInsertMarkdown("list", "list item")}
+        onClick={() => handleFormat("list", "list item")}
         title="List"
         className="h-8 w-8 p-0"
-        disabled={showPreview && !showSplit}
       >
         <List className="w-4 h-4" />
       </Button>
       <Button
-        variant="ghost"
+        variant={isActive("link") ? "secondary" : "ghost"}
         size="sm"
-        onClick={() => onInsertMarkdown("link", "link text")}
+        onClick={() => handleFormat("link", "link text")}
         title="Link"
         className="h-8 w-8 p-0"
-        disabled={showPreview && !showSplit}
       >
         <Link className="w-4 h-4" />
       </Button>
       <Button
         variant="ghost"
         size="sm"
-        onClick={() => onInsertMarkdown("image", "alt text")}
+        onClick={() => handleFormat("image", "alt text")}
         title="Image"
         className="h-8 w-8 p-0"
-        disabled={showPreview && !showSplit}
       >
         <Image className="w-4 h-4" />
       </Button>

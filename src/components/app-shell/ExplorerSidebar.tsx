@@ -92,7 +92,7 @@ export interface HierarchySelectInfo {
   };
 }
 
-interface UnifiedSidebarProps {
+interface ExplorerSidebarProps {
   collapsed?: boolean;
   onNoteSelect: (noteId: string, type?: EditorType) => void;
   selectedNoteId?: string;
@@ -106,7 +106,7 @@ interface UnifiedSidebarProps {
   } | null;
 }
 
-export const UnifiedSidebar = ({
+export const ExplorerSidebar = ({
   collapsed = false,
   onNoteSelect,
   selectedNoteId,
@@ -114,7 +114,7 @@ export const UnifiedSidebar = ({
   onSystemProjectSelect,
   onHierarchySelect,
   overviewTarget = null,
-}: UnifiedSidebarProps) => {
+}: ExplorerSidebarProps) => {
   const navigate = useNavigate();
   const location = useLocation();
   const {
@@ -147,7 +147,6 @@ export const UnifiedSidebar = ({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const editInputRef = useRef<HTMLInputElement>(null);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const MIN_WIDTH = 56; // Icon-only width
   const MAX_WIDTH = 480;
@@ -173,13 +172,15 @@ export const UnifiedSidebar = ({
     }
   };
 
-  // Focus edit input when editing
-  useEffect(() => {
-    if (editingId && editInputRef.current) {
-      editInputRef.current.focus();
-      editInputRef.current.select();
+  // Callback ref: focus + select text when rename input mounts
+  const focusAndSelect = (el: HTMLInputElement | null) => {
+    if (el) {
+      requestAnimationFrame(() => {
+        el.focus();
+        el.select();
+      });
     }
-  }, [editingId]);
+  };
 
   // Sync overview target to sidebar selection and expand folders
   useEffect(() => {
@@ -444,7 +445,7 @@ export const UnifiedSidebar = ({
                 <FileText className="w-4 h-4 shrink-0" style={{ color: note.color }} />
                 {isEditing ? (
                   <Input
-                    ref={editInputRef}
+                    ref={focusAndSelect}
                     value={editingName}
                     onChange={(e) => setEditingName(e.target.value)}
                     onBlur={handleRename}
@@ -511,7 +512,7 @@ export const UnifiedSidebar = ({
 
   const renderProject = (project: typeof systemsWithMeta[0]['projects'][0], level: number, systemId: string) => {
     const isExpanded = expandedItems.has(project.id);
-    const isSelected = selectedProjectId === project.id;
+    const isSelected = selectedProjectId === project.id && selectedSystemId === systemId;
     const isEditing = editingId === project.id;
 
     const handleRename = () => {
@@ -564,7 +565,7 @@ export const UnifiedSidebar = ({
                 {getIconComponent(project.icon, `w-4 h-4 shrink-0 ${!project.color ? 'text-muted-foreground' : ''}`)}
                 {isEditing ? (
                   <Input
-                    ref={editInputRef}
+                    ref={focusAndSelect}
                     value={editingName}
                     onChange={(e) => setEditingName(e.target.value)}
                     onBlur={handleRename}
@@ -593,7 +594,10 @@ export const UnifiedSidebar = ({
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent>
-          <ContextMenuItem onClick={() => addNote(systemId, project.id, "modular")}>
+          <ContextMenuItem onClick={() => {
+            const newNote = addNote(systemId, project.id, "standard");
+            onNoteSelect(newNote.id, newNote.editorType);
+          }}>
             <FileText className="w-4 h-4 mr-2" /> Create Note
           </ContextMenuItem>
           <ContextMenuSeparator />
@@ -702,7 +706,7 @@ export const UnifiedSidebar = ({
                 <Network className="w-4 h-4 shrink-0" style={{ color: system.color }} />
                 {isEditing ? (
                   <Input
-                    ref={editInputRef}
+                    ref={focusAndSelect}
                     value={editingName}
                     onChange={(e) => setEditingName(e.target.value)}
                     onBlur={handleRename}

@@ -1,6 +1,25 @@
-import { createContext, useContext, ReactNode, useState, useEffect, useRef } from "react";
+import { createContext, useContext, ReactNode, useRef, useCallback, useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useVault } from "@/components/vault-system/VaultProvider";
 import { filesystemAdapter } from "@/lib/persistence/filesystem-adapter";
+import { getDb } from "@/lib/db/client";
+import { queryKeys } from "@/lib/db/query-keys";
+import {
+  upsertSystem,
+  upsertProject,
+  upsertNote,
+  upsertTrashNote,
+  deleteSystemFromIndex,
+  deleteProjectFromIndex,
+  deleteNoteFromIndex,
+  deleteTrashNoteFromIndex,
+  clearTrashIndex,
+  fullReindex,
+} from "@/lib/db/indexer";
+import { onFileChange } from "@/lib/watcher";
+import { useSystems as useSqlSystems } from "@/lib/db/hooks/useSystems";
+import { useNotes as useSqlNotes } from "@/lib/db/hooks/useNotes";
+import { useTrash as useSqlTrash } from "@/lib/db/hooks/useTrash";
 
 // Import types from extracted modules
 import {
@@ -136,67 +155,139 @@ const NotesContext = createContext<NotesStore | null>(null);
 
 // Provider
 export function NotesProvider({ children }: { children: ReactNode }) {
-  const { isFilesystem, vaultPath, isReady } = useVault();
+  const { isFilesystem, vaultPath } = useVault();
+  const queryClient = useQueryClient();
 
-  const [systems, setSystems] = useState<System[]>([]);
-  const [notes, setNotes] = useState<Note[]>([]);
-  const [trash, setTrash] = useState<Note[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const notesRef = useRef<Note[]>([]); // Always current
+  // ── React Query reads ─────────────────────────────────────────────
+  const { data: systems = [], isLoading: systemsLoading } = useSqlSystems();
+  const { data: notes = [], isLoading: notesLoading } = useSqlNotes();
+  const { data: trash = [], isLoading: trashLoading } = useSqlTrash();
 
-  // Keep ref in sync with notes
+  const isLoading = systemsLoading || notesLoading || trashLoading;
+
+  // Keep a ref for consumers that need synchronous access
+  const notesRef = useRef<Note[]>(notes);
+  notesRef.current = notes;
+
+  // ── External file watcher ───────────────────────────────────────
   useEffect(() => {
-    notesRef.current = notes;
-  }, [notes]);
+    if (!isFilesystem || !vaultPath) return;
 
-  // Track if we've loaded data (to avoid re-loading)
-  const hasLoadedRef = useRef(false);
-
-  // Load data from appropriate adapter
-  useEffect(() => {
-    // Don't load until vault is ready
-    if (!isReady) return;
-
-    // Don't re-load if we've already loaded
-    if (hasLoadedRef.current) return;
-
-    const loadData = async () => {
-      setIsLoading(true);
+    const unsubscribe = onFileChange(async () => {
       try {
-        if (isFilesystem && vaultPath) {
-          const data = await filesystemAdapter.loadAll();
-          setSystems(data.systems);
-          setNotes(data.notes);
-          setTrash(data.trash);
-        } else {
-          setSystems([]);
-          setNotes([]);
-          setTrash([]);
-        }
-        hasLoadedRef.current = true;
-      } catch (error) {
-        console.error('[NotesStore] Failed to load data:', error);
-        setSystems([]);
-        setNotes([]);
-        setTrash([]);
-        hasLoadedRef.current = true;
-      } finally {
-        setIsLoading(false);
+        const db = await getDb(vaultPath);
+        const data = await filesystemAdapter.loadAll();
+        await fullReindex(db, data);
+        queryClient.invalidateQueries();
+      } catch (err) {
+        console.error('[NotesStore] External change reload failed:', err);
       }
-    };
+    });
 
-    loadData();
-  }, [isReady, isFilesystem, vaultPath]);
+    return unsubscribe;
+  }, [isFilesystem, vaultPath, queryClient]);
 
-  // Generate unique ID
+  // ── Helpers ───────────────────────────────────────────────────────
+
   const generateId = () => `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  const formatDate = () => new Date().toLocaleString();
 
-  // Format relative date
-  const formatDate = () => {
-    return new Date().toLocaleString();
-  };
+  /**
+   * Persist a system to filesystem + SQLite, then invalidate queries.
+   * Optimistically updates the React Query cache so data is available immediately.
+   */
+  const persistSystem = useCallback(async (system: System) => {
+    // Optimistic update — make data available to consumers immediately
+    queryClient.setQueryData<System[]>(queryKeys.systems.all, (old = []) => {
+      const idx = old.findIndex(s => s.id === system.id);
+      if (idx >= 0) {
+        const updated = [...old];
+        updated[idx] = system;
+        return updated;
+      }
+      return [...old, system];
+    });
 
-  // System operations
+    if (!isFilesystem || !vaultPath) return;
+    try {
+      await filesystemAdapter.saveSystem(system);
+      const db = await getDb(vaultPath);
+      await upsertSystem(db, system);
+      for (const project of system.projects) {
+        await upsertProject(db, system.id, project);
+      }
+    } catch (err) {
+      console.error('[NotesStore] Failed to persist system:', err);
+    }
+    queryClient.invalidateQueries({ queryKey: queryKeys.systems.all });
+    queryClient.invalidateQueries({ queryKey: queryKeys.projects.all });
+    queryClient.invalidateQueries({ queryKey: queryKeys.tags.aggregated('root') });
+  }, [isFilesystem, vaultPath, queryClient]);
+
+  /**
+   * Persist a project to filesystem + SQLite, then invalidate queries.
+   * Optimistically updates the React Query cache so data is available immediately.
+   */
+  const persistProject = useCallback(async (systemId: string, project: Project) => {
+    // Optimistic update — update the project within its parent system
+    queryClient.setQueryData<System[]>(queryKeys.systems.all, (old = []) => {
+      return old.map(s => {
+        if (s.id !== systemId) return s;
+        const pidx = s.projects.findIndex(p => p.id === project.id);
+        if (pidx >= 0) {
+          const projects = [...s.projects];
+          projects[pidx] = project;
+          return { ...s, projects };
+        }
+        return { ...s, projects: [...s.projects, project] };
+      });
+    });
+
+    if (!isFilesystem || !vaultPath) return;
+    try {
+      await filesystemAdapter.saveProject(systemId, project);
+      const db = await getDb(vaultPath);
+      await upsertProject(db, systemId, project);
+    } catch (err) {
+      console.error('[NotesStore] Failed to persist project:', err);
+    }
+    queryClient.invalidateQueries({ queryKey: queryKeys.systems.all });
+    queryClient.invalidateQueries({ queryKey: queryKeys.projects.all });
+    queryClient.invalidateQueries({ queryKey: queryKeys.tags.aggregated('root') });
+  }, [isFilesystem, vaultPath, queryClient]);
+
+  /**
+   * Persist a note to filesystem + SQLite, then invalidate queries.
+   * Optimistically updates the React Query cache so data is available immediately.
+   */
+  const persistNote = useCallback(async (note: Note) => {
+    // Optimistic update — make data available to consumers immediately
+    queryClient.setQueryData<Note[]>(queryKeys.notes.all, (old = []) => {
+      const idx = old.findIndex(n => n.id === note.id);
+      if (idx >= 0) {
+        const updated = [...old];
+        updated[idx] = note;
+        return updated;
+      }
+      return [note, ...old];
+    });
+
+    if (!isFilesystem || !vaultPath) return;
+    try {
+      await filesystemAdapter.saveNote(note);
+      const db = await getDb(vaultPath);
+      // Read latest state from cache to include concurrent updates (e.g. attachments)
+      const latestNote = queryClient.getQueryData<Note[]>(queryKeys.notes.all)?.find(n => n.id === note.id) ?? note;
+      await upsertNote(db, latestNote);
+    } catch (err) {
+      console.error('[NotesStore] Failed to persist note:', err);
+    }
+    queryClient.invalidateQueries({ queryKey: queryKeys.notes.all });
+    queryClient.invalidateQueries({ queryKey: queryKeys.tags.aggregated('root') });
+  }, [isFilesystem, vaultPath, queryClient]);
+
+  // ── System operations ─────────────────────────────────────────────
+
   const addSystem = (name: string): System => {
     const newSystem: System = {
       id: generateId(),
@@ -205,169 +296,129 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
-    const newSystems = [...systems, newSystem];
-    setSystems(newSystems);
-
-    // Save to appropriate adapter
-    if (isFilesystem) {
-      filesystemAdapter.saveSystem(newSystem).catch(err =>
-        console.error('[NotesStore] Failed to save system to filesystem:', err)
-      );
-    }
-
+    persistSystem(newSystem);
     return newSystem;
   };
 
   const updateSystem = (id: string, name: string) => {
-    const newSystems = systems.map(s => s.id === id ? { ...s, name, updatedAt: Date.now() } : s);
-    setSystems(newSystems);
+    const system = systems.find(s => s.id === id);
+    if (!system) return;
+    const updated = { ...system, name, updatedAt: Date.now() };
 
-    // Save to appropriate adapter
-    const updatedSystem = newSystems.find(s => s.id === id);
-    if (isFilesystem && updatedSystem) {
-      filesystemAdapter.saveSystem(updatedSystem).catch(err =>
-        console.error('[NotesStore] Failed to update system in filesystem:', err)
-      );
+    if (isFilesystem && system.name !== name) {
+      // Rename folder on disk before persisting (idMap must update first)
+      filesystemAdapter.renameSystem(id, name).then(() => {
+        persistSystem(updated);
+      }).catch(err => {
+        console.error('[NotesStore] Failed to rename system on disk:', err);
+        persistSystem(updated);
+      });
+    } else {
+      persistSystem(updated);
     }
   };
 
   const deleteSystem = (id: string) => {
-    const newSystems = systems.filter(s => s.id !== id);
-    const newNotes = notes.filter(n => n.systemId !== id);
-    setSystems(newSystems);
-    // Also delete all notes in this system
-    setNotes(newNotes);
+    // Optimistic removal
+    queryClient.setQueryData<System[]>(queryKeys.systems.all, (old = []) => old.filter(s => s.id !== id));
+    queryClient.setQueryData<Note[]>(queryKeys.notes.all, (old = []) => old.filter(n => n.systemId !== id));
 
-    // Save to appropriate adapter
-    if (isFilesystem) {
-      filesystemAdapter.deleteSystem(id).catch(err =>
-        console.error('[NotesStore] Failed to delete system from filesystem:', err)
-      );
-    }
+    if (!isFilesystem || !vaultPath) return;
+    (async () => {
+      try {
+        await filesystemAdapter.deleteSystem(id);
+        const db = await getDb(vaultPath);
+        await deleteSystemFromIndex(db, id);
+      } catch (err) {
+        console.error('[NotesStore] Failed to delete system:', err);
+      }
+      queryClient.invalidateQueries({ queryKey: queryKeys.systems.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.projects.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.notes.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.tags.aggregated('root') });
+    })();
   };
 
   const updateSystemMetadata = (id: string, updates: Partial<Omit<System, "id" | "projects">>) => {
-    const newSystems = systems.map(s => {
-      if (s.id !== id) return s;
-      return {
-        ...s,
-        ...updates,
-        updatedAt: Date.now(),
-      };
-    });
-    setSystems(newSystems);
-
-    // Save to appropriate adapter
-    const updatedSystem = newSystems.find(s => s.id === id);
-    if (isFilesystem && updatedSystem) {
-      filesystemAdapter.saveSystem(updatedSystem).catch(err =>
-        console.error('[NotesStore] Failed to update system metadata in filesystem:', err)
-      );
-    }
+    const system = systems.find(s => s.id === id);
+    if (!system) return;
+    const updated = { ...system, ...updates, updatedAt: Date.now() };
+    persistSystem(updated);
   };
 
   const getSystem = (id: string): System | undefined => {
     return systems.find(s => s.id === id);
   };
 
-  // Project operations
+  // ── Project operations ────────────────────────────────────────────
+
   const addProject = (systemId: string, name: string): Project | null => {
+    const system = systems.find(s => s.id === systemId);
+    if (!system) return null;
+
     const newProject: Project = {
       id: generateId(),
       name,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
-    const systemIndex = systems.findIndex(s => s.id === systemId);
-    if (systemIndex === -1) return null;
 
-    const updatedSystems = [...systems];
-    updatedSystems[systemIndex] = {
-      ...updatedSystems[systemIndex],
-      projects: [...updatedSystems[systemIndex].projects, newProject],
-      updatedAt: Date.now(),
-    };
-    setSystems(updatedSystems);
-
-    // Save to appropriate adapter
-    if (isFilesystem) {
-      filesystemAdapter.saveProject(systemId, newProject).catch(err =>
-        console.error('[NotesStore] Failed to save project to filesystem:', err)
-      );
-    }
+    persistProject(systemId, newProject);
+    // Also update system's updatedAt
+    persistSystem({ ...system, projects: [...system.projects, newProject], updatedAt: Date.now() });
 
     return newProject;
   };
 
   const updateProject = (systemId: string, projectId: string, name: string) => {
-    const newSystems = systems.map(s => {
-      if (s.id !== systemId) return s;
-      return {
-        ...s,
-        projects: s.projects.map(p => p.id === projectId ? { ...p, name, updatedAt: Date.now() } : p),
-        updatedAt: Date.now(),
-      };
-    });
-    setSystems(newSystems);
+    const system = systems.find(s => s.id === systemId);
+    const project = system?.projects.find(p => p.id === projectId);
+    if (!project) return;
+    const updated = { ...project, name, updatedAt: Date.now() };
 
-    // Save to appropriate adapter
-    const system = newSystems.find(s => s.id === systemId);
-    const updatedProject = system?.projects.find(p => p.id === projectId);
-    if (isFilesystem && updatedProject) {
-      filesystemAdapter.saveProject(systemId, updatedProject).catch(err =>
-        console.error('[NotesStore] Failed to update project in filesystem:', err)
-      );
+    if (isFilesystem && project.name !== name) {
+      filesystemAdapter.renameProject(projectId, name).then(() => {
+        persistProject(systemId, updated);
+      }).catch(err => {
+        console.error('[NotesStore] Failed to rename project on disk:', err);
+        persistProject(systemId, updated);
+      });
+    } else {
+      persistProject(systemId, updated);
     }
   };
 
   const deleteProject = (systemId: string, projectId: string) => {
-    const newSystems = systems.map(s => {
-      if (s.id !== systemId) return s;
-      return {
-        ...s,
-        projects: s.projects.filter(p => p.id !== projectId),
-        updatedAt: Date.now(),
-      };
-    });
-    const newNotes = notes.filter(n => !(n.systemId === systemId && n.projectId === projectId));
-    setSystems(newSystems);
-    // Also delete all notes in this project
-    setNotes(newNotes);
+    // Optimistic removal
+    queryClient.setQueryData<System[]>(queryKeys.systems.all, (old = []) =>
+      old.map(s => s.id !== systemId ? s : { ...s, projects: s.projects.filter(p => p.id !== projectId) })
+    );
+    queryClient.setQueryData<Note[]>(queryKeys.notes.all, (old = []) =>
+      old.filter(n => !(n.systemId === systemId && n.projectId === projectId))
+    );
 
-    // Save to appropriate adapter
-    if (isFilesystem) {
-      filesystemAdapter.deleteProject(systemId, projectId).catch(err =>
-        console.error('[NotesStore] Failed to delete project from filesystem:', err)
-      );
-    }
+    if (!isFilesystem || !vaultPath) return;
+    (async () => {
+      try {
+        await filesystemAdapter.deleteProject(systemId, projectId);
+        const db = await getDb(vaultPath);
+        await deleteProjectFromIndex(db, projectId);
+      } catch (err) {
+        console.error('[NotesStore] Failed to delete project:', err);
+      }
+      queryClient.invalidateQueries({ queryKey: queryKeys.systems.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.projects.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.notes.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.tags.aggregated('root') });
+    })();
   };
 
   const updateProjectMetadata = (systemId: string, projectId: string, updates: Partial<Omit<Project, "id">>) => {
-    const newSystems = systems.map(s => {
-      if (s.id !== systemId) return s;
-      return {
-        ...s,
-        projects: s.projects.map(p => {
-          if (p.id !== projectId) return p;
-          return {
-            ...p,
-            ...updates,
-            updatedAt: Date.now(),
-          };
-        }),
-        updatedAt: Date.now(),
-      };
-    });
-    setSystems(newSystems);
-
-    // Save to appropriate adapter
-    const system = newSystems.find(s => s.id === systemId);
-    const updatedProject = system?.projects.find(p => p.id === projectId);
-    if (isFilesystem && updatedProject) {
-      filesystemAdapter.saveProject(systemId, updatedProject).catch(err =>
-        console.error('[NotesStore] Failed to update project metadata in filesystem:', err)
-      );
-    }
+    const system = systems.find(s => s.id === systemId);
+    const project = system?.projects.find(p => p.id === projectId);
+    if (!project) return;
+    const updated = { ...project, ...updates, updatedAt: Date.now() };
+    persistProject(systemId, updated);
   };
 
   const getProject = (systemId: string, projectId: string): Project | undefined => {
@@ -375,14 +426,15 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     return system?.projects.find(p => p.id === projectId);
   };
 
-  // Note operations
+  // ── Note operations ───────────────────────────────────────────────
+
   const addNote = (systemId: string, projectId: string, editorType: EditorType): Note => {
     const now = Date.now();
     let defaultContent: Block[] | string | VisualNode[];
 
     switch (editorType) {
       case "standard":
-        defaultContent = "# New Note\n\nStart writing here...";
+        defaultContent = "";
         break;
       case "visual":
         defaultContent = [
@@ -391,17 +443,14 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         break;
       case "modular":
       default:
-        defaultContent = [
-          { id: generateId(), type: "heading", content: "New Note", metadata: { level: 1 } },
-          { id: generateId(), type: "paragraph", content: "Start writing here..." },
-        ];
+        defaultContent = [];
         break;
     }
 
     const newNote: Note = {
       id: generateId(),
-      title: "New Note",
-      preview: "Start writing here...",
+      title: "Untitled",
+      preview: "",
       date: formatDate(),
       tags: [],
       systemId,
@@ -411,185 +460,198 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       createdAt: now,
       updatedAt: now,
     };
-    const newNotes = [newNote, ...notes];
-    setNotes(newNotes);
 
-    // Save to appropriate adapter
-    if (isFilesystem) {
-      filesystemAdapter.saveNote(newNote).catch(err =>
-        console.error('[NotesStore] Failed to save note to filesystem:', err)
-      );
-    }
-
+    persistNote(newNote);
     return newNote;
   };
 
   const updateNote = (id: string, updates: Partial<Omit<Note, "id">>) => {
-    const newNotes = notes.map(n => {
-      if (n.id !== id) return n;
-      return {
-        ...n,
-        ...updates,
-        updatedAt: Date.now(),
-      };
-    });
-    setNotes(newNotes);
+    const note = notes.find(n => n.id === id);
+    if (!note) return;
+    const updated: Note = { ...note, ...updates, updatedAt: Date.now() };
 
-    // Save to appropriate adapter
-    const updatedNote = newNotes.find(n => n.id === id);
-    if (isFilesystem && updatedNote) {
-      filesystemAdapter.saveNote(updatedNote).catch(err =>
-        console.error('[NotesStore] Failed to update note in filesystem:', err)
-      );
-    }
-  };
-
-  const saveAttachment = (noteId: string, filename: string, dataUrl: string) => {
-    // Use functional update to avoid stale closure
-    setNotes(prevNotes => {
-      const newNotes = prevNotes.map(n => {
-        if (n.id !== noteId) return n;
-
-        return {
-          ...n,
-          attachments: {
-            ...(n.attachments || {}),
-            [filename]: dataUrl,
-          },
-          updatedAt: Date.now(),
-        };
+    if (isFilesystem && updates.title && updates.title !== note.title) {
+      filesystemAdapter.renameNote(id, updates.title).then(() => {
+        persistNote(updated);
+      }).catch(err => {
+        console.error('[NotesStore] Failed to rename note on disk:', err);
+        persistNote(updated);
       });
-
-      return newNotes;
-    });
-
-    // Also save to filesystem if in filesystem mode
-    if (isFilesystem) {
-      filesystemAdapter.saveAttachment(noteId, filename, dataUrl).catch(err =>
-        console.error('[NotesStore] Failed to save attachment to filesystem:', err)
-      );
+    } else {
+      persistNote(updated);
     }
   };
 
   const updateNoteContent = (id: string, content: Block[] | string | VisualNode[]) => {
-    const newNotes = notes.map(n => {
-      if (n.id !== id) return n;
+    const note = notes.find(n => n.id === id);
+    if (!note) return;
 
-      // Extract title and preview based on content type
-      let title = n.title;
-      let preview = n.preview;
+    let title = note.title;
+    let preview = note.preview;
 
-      if (typeof content === "string") {
-        // For markdown: extract first heading (# Title)
-        const headingMatch = content.match(/^#\s+(.+)$/m);
-        if (headingMatch) {
-          title = headingMatch[1].trim();
-        }
-        // Preview: strip markdown headings, take first 100 chars
-        preview = content.replace(/^#+\s+/gm, "").slice(0, 100).trim();
-      } else if (Array.isArray(content) && content.length > 0) {
-        const firstItem = content[0] as any;
-
-        // Block content (has 'type' like heading, paragraph, etc.)
-        if (firstItem.type && ["heading", "paragraph", "code", "list", "image", "section"].includes(firstItem.type)) {
-          // Find first heading for title
-          const headingBlock = (content as Block[]).find(b => b.type === "heading");
-          if (headingBlock && headingBlock.content) {
-            title = headingBlock.content.trim();
-          }
-          // Preview from first content block
-          const contentBlock = (content as Block[]).find(b => b.content && b.type !== "section");
-          if (contentBlock) {
-            preview = contentBlock.content.slice(0, 100).trim();
-          }
-        }
-        // Visual nodes (has 'type' like start, process, etc.)
-        else if (firstItem.type && ["start", "process", "decision", "end"].includes(firstItem.type)) {
-          // Use first node's label as title if it's meaningful
-          if (firstItem.label && firstItem.label !== "Start") {
-            title = firstItem.label;
-          }
-          preview = `Flowchart with ${content.length} nodes`;
-        }
+    if (typeof content === "string") {
+      const headingMatch = content.match(/^#\s+(.+)$/m);
+      if (headingMatch) {
+        title = headingMatch[1].trim();
       }
+      preview = content.replace(/^#+\s+/gm, "").slice(0, 100).trim();
+    } else if (Array.isArray(content) && content.length > 0) {
+      const firstItem = content[0] as any;
 
-      return {
-        ...n,
-        title,
-        content,
-        preview,
-        date: "Just now",
-        updatedAt: Date.now(),
-      };
-    });
-    setNotes(newNotes);
-
-    // Save to appropriate adapter
-    const updatedNote = newNotes.find(n => n.id === id);
-    if (isFilesystem && updatedNote) {
-      filesystemAdapter.saveNote(updatedNote).catch(err =>
-        console.error('[NotesStore] Failed to update note content in filesystem:', err)
-      );
+      if (firstItem.type && ["heading", "paragraph", "code", "list", "image", "section"].includes(firstItem.type)) {
+        const headingBlock = (content as Block[]).find(b => b.type === "heading");
+        if (headingBlock && headingBlock.content) {
+          title = headingBlock.content.trim();
+        }
+        const contentBlock = (content as Block[]).find(b => b.content && b.type !== "section");
+        if (contentBlock) {
+          preview = contentBlock.content.slice(0, 100).trim();
+        }
+      } else if (firstItem.type && ["start", "process", "decision", "end"].includes(firstItem.type)) {
+        if (firstItem.label && firstItem.label !== "Start") {
+          title = firstItem.label;
+        }
+        preview = `Flowchart with ${content.length} nodes`;
+      }
     }
 
-    // Sync auto-extracted tags and links from content
+    const updated: Note = {
+      ...note,
+      title,
+      content,
+      preview,
+      date: "Just now",
+      updatedAt: Date.now(),
+    };
+
+    if (isFilesystem && title !== note.title) {
+      filesystemAdapter.renameNote(id, title).then(() => {
+        persistNote(updated);
+      }).catch(err => {
+        console.error('[NotesStore] Failed to rename note on disk:', err);
+        persistNote(updated);
+      });
+    } else {
+      persistNote(updated);
+    }
+
+    // Sync auto-extracted tags after content save
     syncAutoExtractedData(id);
+  };
+
+  const saveAttachment = (noteId: string, filename: string, dataUrl: string) => {
+    // Optimistic update — merge attachment into current cache state (not stale `notes`)
+    queryClient.setQueryData<Note[]>(queryKeys.notes.all, (old = []) =>
+      old.map(n => {
+        if (n.id !== noteId) return n;
+        return {
+          ...n,
+          attachments: { ...(n.attachments || {}), [filename]: dataUrl },
+          updatedAt: Date.now(),
+        };
+      })
+    );
+
+    // Persist: save attachment file + targeted SQLite update
+    if (isFilesystem && vaultPath) {
+      (async () => {
+        try {
+          await filesystemAdapter.saveAttachment(noteId, filename, dataUrl);
+          // Read latest from cache (includes concurrent content updates)
+          const db = await getDb(vaultPath);
+          const latestNote = queryClient.getQueryData<Note[]>(queryKeys.notes.all)?.find(n => n.id === noteId);
+          if (latestNote) {
+            await upsertNote(db, latestNote);
+          }
+        } catch (err) {
+          console.error('[NotesStore] Failed to save attachment:', err);
+        }
+        queryClient.invalidateQueries({ queryKey: queryKeys.notes.all });
+      })();
+    }
   };
 
   const deleteNote = (id: string) => {
     const noteToDelete = notes.find(n => n.id === id);
-    if (noteToDelete) {
-      const newTrash = [noteToDelete, ...trash];
-      const newNotes = notes.filter(n => n.id !== id);
-      setTrash(newTrash);
-      setNotes(newNotes);
+    if (!noteToDelete) return;
 
-      // Save to appropriate adapter
-      if (isFilesystem) {
-        filesystemAdapter.deleteNote(id).catch(err =>
-          console.error('[NotesStore] Failed to delete note from filesystem:', err)
-        );
-      }
+    // Optimistic: move from notes to trash
+    queryClient.setQueryData<Note[]>(queryKeys.notes.all, (old = []) => old.filter(n => n.id !== id));
+    queryClient.setQueryData<Note[]>(queryKeys.trash.all, (old = []) => [noteToDelete, ...old]);
+
+    if (isFilesystem && vaultPath) {
+      (async () => {
+        try {
+          await filesystemAdapter.deleteNote(id);
+          const db = await getDb(vaultPath);
+          await deleteNoteFromIndex(db, id);
+          await upsertTrashNote(db, noteToDelete);
+        } catch (err) {
+          console.error('[NotesStore] Failed to delete note:', err);
+        }
+        queryClient.invalidateQueries({ queryKey: queryKeys.notes.all });
+        queryClient.invalidateQueries({ queryKey: queryKeys.trash.all });
+      })();
     }
   };
 
   const restoreNote = (id: string) => {
     const noteToRestore = trash.find(n => n.id === id);
-    if (noteToRestore) {
-      const newNotes = [noteToRestore, ...notes];
-      const newTrash = trash.filter(n => n.id !== id);
-      setNotes(newNotes);
-      setTrash(newTrash);
+    if (!noteToRestore) return;
 
-      // Save to appropriate adapter
-      if (isFilesystem) {
-        filesystemAdapter.restoreNote(id).catch(err =>
-          console.error('[NotesStore] Failed to restore note from filesystem:', err)
-        );
-      }
+    // Optimistic: move from trash to notes
+    queryClient.setQueryData<Note[]>(queryKeys.trash.all, (old = []) => old.filter(n => n.id !== id));
+    queryClient.setQueryData<Note[]>(queryKeys.notes.all, (old = []) => [noteToRestore, ...old]);
+
+    if (isFilesystem && vaultPath) {
+      (async () => {
+        try {
+          await filesystemAdapter.restoreNote(id);
+          const db = await getDb(vaultPath);
+          await deleteTrashNoteFromIndex(db, id);
+          await upsertNote(db, noteToRestore);
+        } catch (err) {
+          console.error('[NotesStore] Failed to restore note:', err);
+        }
+        queryClient.invalidateQueries({ queryKey: queryKeys.notes.all });
+        queryClient.invalidateQueries({ queryKey: queryKeys.trash.all });
+      })();
     }
   };
 
   const permanentlyDeleteNote = (id: string) => {
-    const newTrash = trash.filter(n => n.id !== id);
-    setTrash(newTrash);
+    // Optimistic removal from trash
+    queryClient.setQueryData<Note[]>(queryKeys.trash.all, (old = []) => old.filter(n => n.id !== id));
 
-    // Save to appropriate adapter
-    if (isFilesystem) {
-      filesystemAdapter.permanentlyDeleteNote(id).catch(err =>
-        console.error('[NotesStore] Failed to permanently delete note from filesystem:', err)
-      );
+    if (isFilesystem && vaultPath) {
+      (async () => {
+        try {
+          await filesystemAdapter.permanentlyDeleteNote(id);
+          const db = await getDb(vaultPath);
+          await deleteTrashNoteFromIndex(db, id);
+        } catch (err) {
+          console.error('[NotesStore] Failed to permanently delete note:', err);
+        }
+        queryClient.invalidateQueries({ queryKey: queryKeys.trash.all });
+      })();
     }
   };
 
   const emptyTrash = () => {
-    setTrash([]);
+    // Optimistic clear
+    queryClient.setQueryData<Note[]>(queryKeys.trash.all, []);
 
-    // Save to appropriate adapter
-    if (isFilesystem) {
-      filesystemAdapter.emptyTrash().catch(err =>
-        console.error('[NotesStore] Failed to empty trash in filesystem:', err)
-      );
+    if (isFilesystem && vaultPath) {
+      (async () => {
+        try {
+          await filesystemAdapter.emptyTrash();
+          const db = await getDb(vaultPath);
+          await clearTrashIndex(db);
+        } catch (err) {
+          console.error('[NotesStore] Failed to empty trash:', err);
+        }
+        queryClient.invalidateQueries({ queryKey: queryKeys.trash.all });
+      })();
     }
   };
 
@@ -605,7 +667,8 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     return notes.filter(n => n.systemId === systemId);
   };
 
-  // Extract hashtags from note content
+  // ── Tag extraction & sync ─────────────────────────────────────────
+
   const extractTagsFromContent = (noteId: string): string[] => {
     const note = notes.find(n => n.id === noteId);
     if (!note) return [];
@@ -614,78 +677,58 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     if (typeof note.content === 'string') {
       content = note.content;
     } else if (Array.isArray(note.content)) {
-      // Extract from blocks
       const first = note.content[0] as any;
       if (first?.type && ["heading", "paragraph", "code", "list", "image", "section"].includes(first.type)) {
         content = (note.content as Block[]).map(b => b.content || '').join(' ');
       }
     }
 
-    // Match #tagname patterns (alphanumeric and underscores)
     const matches = content.match(/#(\w+)/g) || [];
-    return [...new Set(matches.map(m => m.slice(1)))]; // Remove # prefix and deduplicate
+    return [...new Set(matches.map(m => m.slice(1)))];
   };
 
-  // Sync auto-extracted tags and links from content to note metadata
   const syncAutoExtractedData = (noteId: string) => {
-    setNotes(prevNotes => {
-      const note = prevNotes.find(n => n.id === noteId);
-      if (!note) return prevNotes;
+    const note = notes.find(n => n.id === noteId);
+    if (!note) return;
 
-      // Extract tags from content
-      const extractedTags = extractTagsFromContent(noteId);
-      const existingTags = note.tags || [];
-      const allTags = [...new Set([...existingTags, ...extractedTags])];
+    const extractedTags = extractTagsFromContent(noteId);
+    const existingTags = note.tags || [];
+    const allTags = [...new Set([...existingTags, ...extractedTags])];
 
-      // Extract links from content (http/https URLs)
-      let content = '';
-      if (typeof note.content === 'string') {
-        content = note.content;
-      } else if (Array.isArray(note.content)) {
-        const first = note.content[0] as any;
-        if (first?.type && ["heading", "paragraph", "code", "list", "image", "section"].includes(first.type)) {
-          content = (note.content as Block[]).map(b => b.content || '').join(' ');
-        }
+    let content = '';
+    if (typeof note.content === 'string') {
+      content = note.content;
+    } else if (Array.isArray(note.content)) {
+      const first = note.content[0] as any;
+      if (first?.type && ["heading", "paragraph", "code", "list", "image", "section"].includes(first.type)) {
+        content = (note.content as Block[]).map(b => b.content || '').join(' ');
       }
-      const urlMatches = content.match(/(?:https?:\/\/|www\.)[^\s)]+/g) || [];
-      const existingLinks = note.links || [];
-      const autoExtractedUrls = urlMatches.filter(url => !existingLinks.some(l => l.url === url));
+    }
+    const urlMatches = content.match(/(?:https?:\/\/|www\.)[^\s)]+/g) || [];
+    const existingLinks = note.links || [];
+    const autoExtractedUrls = urlMatches.filter(url => !existingLinks.some(l => l.url === url));
 
-      // Update note if there are new tags or links
-      const newLinks = autoExtractedUrls.map(url => {
-        // Normalize www. URLs to https://
-        const normalizedUrl = url.startsWith('www.') ? `https://${url}` : url;
-        return {
-          id: `link_${Date.now()}_${Math.random().toString(36).slice(2)}`,
-          url: normalizedUrl,
-          title: url.split('/').pop() || url,
-          addedAt: Date.now(),
-        };
-      });
-
-      if (allTags.length > existingTags.length || newLinks.length > 0) {
-        const updatedNote = {
-          ...note,
-          tags: allTags,
-          links: [...existingLinks, ...newLinks],
-          updatedAt: Date.now(),
-        };
-
-        // Save to filesystem after state update
-        if (isFilesystem) {
-          filesystemAdapter.saveNote(updatedNote).catch(err =>
-            console.error('[NotesStore] Failed to sync auto-extracted data in filesystem:', err)
-          );
-        }
-
-        return prevNotes.map(n => n.id !== noteId ? n : updatedNote);
-      }
-
-      return prevNotes;
+    const newLinks = autoExtractedUrls.map(url => {
+      const normalizedUrl = url.startsWith('www.') ? `https://${url}` : url;
+      return {
+        id: `link_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+        url: normalizedUrl,
+        title: url.split('/').pop() || url,
+        addedAt: Date.now(),
+      };
     });
+
+    if (allTags.length > existingTags.length || newLinks.length > 0) {
+      const updated: Note = {
+        ...note,
+        tags: allTags,
+        links: [...existingLinks, ...newLinks],
+        updatedAt: Date.now(),
+      };
+      persistNote(updated);
+    }
   };
 
-  // Get aggregated tags from all items at a level
   const getAggregatedTags = (level: 'project' | 'system' | 'root', id?: string): string[] => {
     const allTags: string[] = [];
 
@@ -695,7 +738,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         const projectNotes = notes.filter(n => n.projectId === id);
         projectNotes.forEach(note => {
           allTags.push(...(note.tags || []));
-          allTags.push(...extractTagsFromContent(note.id));
         });
         break;
       }
@@ -704,9 +746,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         const systemNotes = notes.filter(n => n.systemId === id);
         systemNotes.forEach(note => {
           allTags.push(...(note.tags || []));
-          allTags.push(...extractTagsFromContent(note.id));
         });
-        // Also include project tags
         const system = systems.find(s => s.id === id);
         system?.projects.forEach(p => {
           allTags.push(...(p.tags || []));
@@ -716,7 +756,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       case 'root': {
         notes.forEach(note => {
           allTags.push(...(note.tags || []));
-          allTags.push(...extractTagsFromContent(note.id));
         });
         systems.forEach(system => {
           allTags.push(...(system.tags || []));
@@ -731,14 +770,12 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     return [...new Set(allTags)];
   };
 
-  // Get metrics stats (counts of good/warning/critical) from items at a level
   const getMetricsStats = (level: 'project' | 'system' | 'root', id?: string): { good: number; warning: number; critical: number } => {
     const stats = { good: 0, warning: 0, critical: 0 };
 
     switch (level) {
       case 'project': {
         if (!id) return stats;
-        // Count from notes in project
         const projectNotes = notes.filter(n => n.projectId === id);
         projectNotes.forEach(note => {
           if (note.metrics?.health === 'good') stats.good++;
@@ -749,14 +786,12 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       }
       case 'system': {
         if (!id) return stats;
-        // Count from notes in system
         const systemNotes = notes.filter(n => n.systemId === id);
         systemNotes.forEach(note => {
           if (note.metrics?.health === 'good') stats.good++;
           else if (note.metrics?.health === 'warning') stats.warning++;
           else if (note.metrics?.health === 'critical') stats.critical++;
         });
-        // Count from projects in system
         const system = systems.find(s => s.id === id);
         system?.projects.forEach(p => {
           if (p.metrics?.health === 'good') stats.good++;
@@ -766,25 +801,20 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         break;
       }
       case 'root': {
-        // Count from all notes
         notes.forEach(note => {
           if (note.metrics?.health === 'good') stats.good++;
           else if (note.metrics?.health === 'warning') stats.warning++;
           else if (note.metrics?.health === 'critical') stats.critical++;
         });
-        // Count from all projects
         systems.forEach(system => {
           system.projects.forEach(p => {
             if (p.metrics?.health === 'good') stats.good++;
             else if (p.metrics?.health === 'warning') stats.warning++;
             else if (p.metrics?.health === 'critical') stats.critical++;
           });
-        });
-        // Count from all systems
-        systems.forEach(s => {
-          if (s.metrics?.health === 'good') stats.good++;
-          else if (s.metrics?.health === 'warning') stats.warning++;
-          else if (s.metrics?.health === 'critical') stats.critical++;
+          if (system.metrics?.health === 'good') stats.good++;
+          else if (system.metrics?.health === 'warning') stats.warning++;
+          else if (system.metrics?.health === 'critical') stats.critical++;
         });
         break;
       }
@@ -793,887 +823,640 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     return stats;
   };
 
-  // Update tag color for a note
+  // ── Tag color operations ──────────────────────────────────────────
+
   const updateNoteTagColor = (noteId: string, tagName: string, color: string) => {
-    const newNotes = notes.map(n => {
-      if (n.id !== noteId) return n;
-      return {
-        ...n,
-        tagColors: {
-          ...n.tagColors,
-          [tagName]: color,
-        },
-        updatedAt: Date.now(),
-      };
-    });
-    setNotes(newNotes);
-
-    const updatedNote = newNotes.find(n => n.id === noteId);
-    if (isFilesystem && updatedNote) {
-      filesystemAdapter.saveNote(updatedNote).catch(err =>
-        console.error('[NotesStore] Failed to update note tag color in filesystem:', err)
-      );
-    }
+    const note = notes.find(n => n.id === noteId);
+    if (!note) return;
+    const updated: Note = {
+      ...note,
+      tagColors: { ...note.tagColors, [tagName]: color },
+      updatedAt: Date.now(),
+    };
+    persistNote(updated);
   };
 
-  // Update tag color for a project
   const updateProjectTagColor = (systemId: string, projectId: string, tagName: string, color: string) => {
-    const newSystems = systems.map(s => {
-      if (s.id !== systemId) return s;
-      return {
-        ...s,
-        projects: s.projects.map(p => {
-          if (p.id !== projectId) return p;
-          return {
-            ...p,
-            tagColors: {
-              ...p.tagColors,
-              [tagName]: color,
-            },
-            updatedAt: Date.now(),
-          };
-        }),
-        updatedAt: Date.now(),
-      };
-    });
-    setSystems(newSystems);
-
-    const system = newSystems.find(s => s.id === systemId);
-    const updatedProject = system?.projects.find(p => p.id === projectId);
-    if (isFilesystem && updatedProject) {
-      filesystemAdapter.saveProject(systemId, updatedProject).catch(err =>
-        console.error('[NotesStore] Failed to update project tag color in filesystem:', err)
-      );
-    }
+    const system = systems.find(s => s.id === systemId);
+    const project = system?.projects.find(p => p.id === projectId);
+    if (!project) return;
+    const updated = {
+      ...project,
+      tagColors: { ...project.tagColors, [tagName]: color },
+      updatedAt: Date.now(),
+    };
+    persistProject(systemId, updated);
   };
 
-  // Update tag color for a system
   const updateSystemTagColor = (systemId: string, tagName: string, color: string) => {
-    const newSystems = systems.map(s => {
-      if (s.id !== systemId) return s;
-      return {
-        ...s,
-        tagColors: {
-          ...s.tagColors,
-          [tagName]: color,
-        },
-        updatedAt: Date.now(),
-      };
-    });
-    setSystems(newSystems);
-
-    const updatedSystem = newSystems.find(s => s.id === systemId);
-    if (isFilesystem && updatedSystem) {
-      filesystemAdapter.saveSystem(updatedSystem).catch(err =>
-        console.error('[NotesStore] Failed to update system tag color in filesystem:', err)
-      );
-    }
+    const system = systems.find(s => s.id === systemId);
+    if (!system) return;
+    const updated = {
+      ...system,
+      tagColors: { ...system.tagColors, [tagName]: color },
+      updatedAt: Date.now(),
+    };
+    persistSystem(updated);
   };
 
-  // Update metrics for a note
+  // ── Metrics operations ────────────────────────────────────────────
+
   const updateNoteMetrics = (noteId: string, metrics: Partial<ItemMetrics>) => {
-    setNotes(notes.map(n => {
-      if (n.id !== noteId) return n;
-      return {
-        ...n,
-        metrics: {
-          ...n.metrics,
-          ...metrics,
-        },
-        updatedAt: Date.now(),
-      };
-    }));
-
-    const updatedNote = notes.find(n => n.id === noteId);
-    if (isFilesystem && updatedNote) {
-      filesystemAdapter.saveNote({ ...updatedNote, metrics: { ...updatedNote.metrics, ...metrics } }).catch(err =>
-        console.error('[NotesStore] Failed to update note metrics in filesystem:', err)
-      );
-    }
+    const note = notes.find(n => n.id === noteId);
+    if (!note) return;
+    const updated: Note = {
+      ...note,
+      metrics: { ...note.metrics, ...metrics },
+      updatedAt: Date.now(),
+    };
+    persistNote(updated);
   };
 
-  // Update metrics for a project
   const updateProjectMetrics = (systemId: string, projectId: string, metrics: Partial<ItemMetrics>) => {
-    setSystems(systems.map(s => {
-      if (s.id !== systemId) return s;
-      return {
-        ...s,
-        projects: s.projects.map(p => {
-          if (p.id !== projectId) return p;
-          return {
-            ...p,
-            metrics: {
-              ...p.metrics,
-              ...metrics,
-            },
-            updatedAt: Date.now(),
-          };
-        }),
-      };
-    }));
-
     const system = systems.find(s => s.id === systemId);
-    const updatedProject = system?.projects.find(p => p.id === projectId);
-    if (isFilesystem && updatedProject) {
-      filesystemAdapter.saveProject(systemId, { ...updatedProject, metrics: { ...updatedProject.metrics, ...metrics } }).catch(err =>
-        console.error('[NotesStore] Failed to update project metrics in filesystem:', err)
-      );
-    }
+    const project = system?.projects.find(p => p.id === projectId);
+    if (!project) return;
+    const updated = {
+      ...project,
+      metrics: { ...project.metrics, ...metrics },
+      updatedAt: Date.now(),
+    };
+    persistProject(systemId, updated);
   };
 
-  // Update metrics for a system
   const updateSystemMetrics = (systemId: string, metrics: Partial<ItemMetrics>) => {
-    setSystems(systems.map(s => {
-      if (s.id !== systemId) return s;
-      return {
-        ...s,
-        metrics: {
-          ...s.metrics,
-          ...metrics,
-        },
-        updatedAt: Date.now(),
-      };
-    }));
-
-    const updatedSystem = systems.find(s => s.id === systemId);
-    if (isFilesystem && updatedSystem) {
-      filesystemAdapter.saveSystem({ ...updatedSystem, metrics: { ...updatedSystem.metrics, ...metrics } }).catch(err =>
-        console.error('[NotesStore] Failed to update system metrics in filesystem:', err)
-      );
-    }
+    const system = systems.find(s => s.id === systemId);
+    if (!system) return;
+    const updated = {
+      ...system,
+      metrics: { ...system.metrics, ...metrics },
+      updatedAt: Date.now(),
+    };
+    persistSystem(updated);
   };
 
-  // Update color/icon for a system
+  // ── Color/Icon operations ─────────────────────────────────────────
+
   const updateSystemColorIcon = (id: string, color?: string, icon?: string) => {
-    setSystems(systems.map(s => {
-      if (s.id !== id) return s;
-      return {
-        ...s,
-        ...(color !== undefined && { color }),
-        ...(icon !== undefined && { icon }),
-        updatedAt: Date.now(),
-      };
-    }));
-
-    const updatedSystem = systems.find(s => s.id === id);
-    if (isFilesystem && updatedSystem) {
-      filesystemAdapter.saveSystem({ ...updatedSystem, color: color ?? updatedSystem.color, icon: icon ?? updatedSystem.icon }).catch(err =>
-        console.error('[NotesStore] Failed to update system color/icon in filesystem:', err)
-      );
-    }
+    const system = systems.find(s => s.id === id);
+    if (!system) return;
+    const updated = {
+      ...system,
+      ...(color !== undefined && { color }),
+      ...(icon !== undefined && { icon }),
+      updatedAt: Date.now(),
+    };
+    persistSystem(updated);
   };
 
-  // Update color/icon for a project
   const updateProjectColorIcon = (systemId: string, projectId: string, color?: string, icon?: string) => {
-    setSystems(systems.map(s => {
-      if (s.id !== systemId) return s;
-      return {
-        ...s,
-        projects: s.projects.map(p => {
-          if (p.id !== projectId) return p;
-          return {
-            ...p,
-            ...(color !== undefined && { color }),
-            ...(icon !== undefined && { icon }),
-            updatedAt: Date.now(),
-          };
-        }),
-      };
-    }));
-
     const system = systems.find(s => s.id === systemId);
-    const updatedProject = system?.projects.find(p => p.id === projectId);
-    if (isFilesystem && updatedProject) {
-      filesystemAdapter.saveProject(systemId, { ...updatedProject, color: color ?? updatedProject.color, icon: icon ?? updatedProject.icon }).catch(err =>
-        console.error('[NotesStore] Failed to update project color/icon in filesystem:', err)
-      );
-    }
+    const project = system?.projects.find(p => p.id === projectId);
+    if (!project) return;
+    const updated = {
+      ...project,
+      ...(color !== undefined && { color }),
+      ...(icon !== undefined && { icon }),
+      updatedAt: Date.now(),
+    };
+    persistProject(systemId, updated);
   };
 
-  // Add attachment to a system
+  // ── Attachment operations ─────────────────────────────────────────
+
   const addSystemAttachment = (systemId: string, attachment: Omit<Attachment, 'id' | 'createdAt'>) => {
-    const newAttachment: Attachment = {
-      ...attachment,
-      id: crypto.randomUUID(),
-      createdAt: Date.now(),
+    const system = systems.find(s => s.id === systemId);
+    if (!system) return;
+    const newAttachment: Attachment = { ...attachment, id: crypto.randomUUID(), createdAt: Date.now() };
+    const updated = {
+      ...system,
+      attachments: [...(system.attachments || []), newAttachment],
+      updatedAt: Date.now(),
     };
-    setSystems(systems.map(s => {
-      if (s.id !== systemId) return s;
-      return {
-        ...s,
-        attachments: [...(s.attachments || []), newAttachment],
-        updatedAt: Date.now(),
-      };
-    }));
-
-    const updatedSystem = systems.find(s => s.id === systemId);
-    if (isFilesystem && updatedSystem) {
-      filesystemAdapter.saveSystem(updatedSystem).catch(err =>
-        console.error('[NotesStore] Failed to add system attachment in filesystem:', err)
-      );
-    }
+    persistSystem(updated);
   };
 
-  // Remove attachment from a system
   const removeSystemAttachment = (systemId: string, attachmentId: string) => {
-    setSystems(systems.map(s => {
-      if (s.id !== systemId) return s;
-      return {
-        ...s,
-        attachments: (s.attachments || []).filter(a => a.id !== attachmentId),
-        updatedAt: Date.now(),
-      };
-    }));
-
-    const updatedSystem = systems.find(s => s.id === systemId);
-    if (isFilesystem && updatedSystem) {
-      filesystemAdapter.saveSystem(updatedSystem).catch(err =>
-        console.error('[NotesStore] Failed to remove system attachment in filesystem:', err)
-      );
-    }
-  };
-
-  // Add attachment to a project
-  const addProjectAttachment = (systemId: string, projectId: string, attachment: Omit<Attachment, 'id' | 'createdAt'>) => {
-    const newAttachment: Attachment = {
-      ...attachment,
-      id: crypto.randomUUID(),
-      createdAt: Date.now(),
+    const system = systems.find(s => s.id === systemId);
+    if (!system) return;
+    const updated = {
+      ...system,
+      attachments: (system.attachments || []).filter(a => a.id !== attachmentId),
+      updatedAt: Date.now(),
     };
-    setSystems(systems.map(s => {
-      if (s.id !== systemId) return s;
-      return {
-        ...s,
-        projects: s.projects.map(p => {
-          if (p.id !== projectId) return p;
-          return {
-            ...p,
-            attachments: [...(p.attachments || []), newAttachment],
-            updatedAt: Date.now(),
-          };
-        }),
-      };
-    }));
-
-    const system = systems.find(s => s.id === systemId);
-    const updatedProject = system?.projects.find(p => p.id === projectId);
-    if (isFilesystem && updatedProject) {
-      filesystemAdapter.saveProject(systemId, updatedProject).catch(err =>
-        console.error('[NotesStore] Failed to add project attachment in filesystem:', err)
-      );
-    }
+    persistSystem(updated);
   };
 
-  // Remove attachment from a project
+  const addProjectAttachment = (systemId: string, projectId: string, attachment: Omit<Attachment, 'id' | 'createdAt'>) => {
+    const system = systems.find(s => s.id === systemId);
+    const project = system?.projects.find(p => p.id === projectId);
+    if (!project) return;
+    const newAttachment: Attachment = { ...attachment, id: crypto.randomUUID(), createdAt: Date.now() };
+    const updated = {
+      ...project,
+      attachments: [...(project.attachments || []), newAttachment],
+      updatedAt: Date.now(),
+    };
+    persistProject(systemId, updated);
+  };
+
   const removeProjectAttachment = (systemId: string, projectId: string, attachmentId: string) => {
-    setSystems(systems.map(s => {
-      if (s.id !== systemId) return s;
-      return {
-        ...s,
-        projects: s.projects.map(p => {
-          if (p.id !== projectId) return p;
-          return {
-            ...p,
-            attachments: (p.attachments || []).filter(a => a.id !== attachmentId),
-            updatedAt: Date.now(),
-          };
-        }),
-      };
-    }));
-
     const system = systems.find(s => s.id === systemId);
-    const updatedProject = system?.projects.find(p => p.id === projectId);
-    if (isFilesystem && updatedProject) {
-      filesystemAdapter.saveProject(systemId, updatedProject).catch(err =>
-        console.error('[NotesStore] Failed to remove project attachment in filesystem:', err)
-      );
-    }
+    const project = system?.projects.find(p => p.id === projectId);
+    if (!project) return;
+    const updated = {
+      ...project,
+      attachments: (project.attachments || []).filter(a => a.id !== attachmentId),
+      updatedAt: Date.now(),
+    };
+    persistProject(systemId, updated);
   };
 
-  // Photo operations
-  const addSystemPhoto = (systemId: string, name: string, dataUrl: string) => {
-    const newPhoto: Photo = { id: crypto.randomUUID(), name, dataUrl, addedAt: Date.now() };
-    setSystems(systems.map(s => s.id !== systemId ? s : { ...s, photos: [...(s.photos || []), newPhoto], updatedAt: Date.now() }));
+  // ── Photo operations ──────────────────────────────────────────────
 
-    const updatedSystem = systems.find(s => s.id === systemId);
-    if (isFilesystem && updatedSystem) {
-      filesystemAdapter.saveSystem(updatedSystem).catch(err =>
-        console.error('[NotesStore] Failed to add system photo in filesystem:', err)
-      );
-    }
+  const addSystemPhoto = (systemId: string, name: string, dataUrl: string) => {
+    const system = systems.find(s => s.id === systemId);
+    if (!system) return;
+    const newPhoto: Photo = { id: crypto.randomUUID(), name, dataUrl, addedAt: Date.now() };
+    const updated = {
+      ...system,
+      photos: [...(system.photos || []), newPhoto],
+      updatedAt: Date.now(),
+    };
+    persistSystem(updated);
   };
 
   const removeSystemPhoto = (systemId: string, photoId: string) => {
-    setSystems(systems.map(s => s.id !== systemId ? s : { ...s, photos: (s.photos || []).filter(p => p.id !== photoId), updatedAt: Date.now() }));
-
-    const updatedSystem = systems.find(s => s.id === systemId);
-    if (isFilesystem && updatedSystem) {
-      filesystemAdapter.saveSystem(updatedSystem).catch(err =>
-        console.error('[NotesStore] Failed to remove system photo in filesystem:', err)
-      );
-    }
+    const system = systems.find(s => s.id === systemId);
+    if (!system) return;
+    const updated = {
+      ...system,
+      photos: (system.photos || []).filter(p => p.id !== photoId),
+      updatedAt: Date.now(),
+    };
+    persistSystem(updated);
   };
 
   const addProjectPhoto = (systemId: string, projectId: string, name: string, dataUrl: string) => {
-    const newPhoto: Photo = { id: crypto.randomUUID(), name, dataUrl, addedAt: Date.now() };
-    setSystems(systems.map(s => s.id !== systemId ? s : {
-      ...s,
-      projects: s.projects.map(p => p.id !== projectId ? p : { ...p, photos: [...(p.photos || []), newPhoto], updatedAt: Date.now() }),
-    }));
-
     const system = systems.find(s => s.id === systemId);
-    const updatedProject = system?.projects.find(p => p.id === projectId);
-    if (isFilesystem && updatedProject) {
-      filesystemAdapter.saveProject(systemId, updatedProject).catch(err =>
-        console.error('[NotesStore] Failed to add project photo in filesystem:', err)
-      );
-    }
+    const project = system?.projects.find(p => p.id === projectId);
+    if (!project) return;
+    const newPhoto: Photo = { id: crypto.randomUUID(), name, dataUrl, addedAt: Date.now() };
+    const updated = {
+      ...project,
+      photos: [...(project.photos || []), newPhoto],
+      updatedAt: Date.now(),
+    };
+    persistProject(systemId, updated);
   };
 
   const removeProjectPhoto = (systemId: string, projectId: string, photoId: string) => {
-    setSystems(systems.map(s => s.id !== systemId ? s : {
-      ...s,
-      projects: s.projects.map(p => p.id !== projectId ? p : { ...p, photos: (p.photos || []).filter(ph => ph.id !== photoId), updatedAt: Date.now() }),
-    }));
-
     const system = systems.find(s => s.id === systemId);
-    const updatedProject = system?.projects.find(p => p.id === projectId);
-    if (isFilesystem && updatedProject) {
-      filesystemAdapter.saveProject(systemId, updatedProject).catch(err =>
-        console.error('[NotesStore] Failed to remove project photo in filesystem:', err)
-      );
-    }
+    const project = system?.projects.find(p => p.id === projectId);
+    if (!project) return;
+    const updated = {
+      ...project,
+      photos: (project.photos || []).filter(p => p.id !== photoId),
+      updatedAt: Date.now(),
+    };
+    persistProject(systemId, updated);
   };
 
-  // Voice recording operations
-  const addSystemVoiceRecording = (systemId: string, name: string, dataUrl: string, duration?: string) => {
-    const newRec: VoiceRecording = { id: crypto.randomUUID(), name, dataUrl, duration, addedAt: Date.now() };
-    setSystems(systems.map(s => s.id !== systemId ? s : { ...s, voiceRecordings: [...(s.voiceRecordings || []), newRec], updatedAt: Date.now() }));
+  // ── Voice recording operations ────────────────────────────────────
 
-    const updatedSystem = systems.find(s => s.id === systemId);
-    if (isFilesystem && updatedSystem) {
-      filesystemAdapter.saveSystem(updatedSystem).catch(err =>
-        console.error('[NotesStore] Failed to add system voice recording in filesystem:', err)
-      );
-    }
+  const addSystemVoiceRecording = (systemId: string, name: string, dataUrl: string, duration?: string) => {
+    const system = systems.find(s => s.id === systemId);
+    if (!system) return;
+    const newRec: VoiceRecording = { id: crypto.randomUUID(), name, dataUrl, duration, addedAt: Date.now() };
+    const updated = {
+      ...system,
+      voiceRecordings: [...(system.voiceRecordings || []), newRec],
+      updatedAt: Date.now(),
+    };
+    persistSystem(updated);
   };
 
   const removeSystemVoiceRecording = (systemId: string, recordingId: string) => {
-    setSystems(systems.map(s => s.id !== systemId ? s : { ...s, voiceRecordings: (s.voiceRecordings || []).filter(r => r.id !== recordingId), updatedAt: Date.now() }));
-
-    const updatedSystem = systems.find(s => s.id === systemId);
-    if (isFilesystem && updatedSystem) {
-      filesystemAdapter.saveSystem(updatedSystem).catch(err =>
-        console.error('[NotesStore] Failed to remove system voice recording in filesystem:', err)
-      );
-    }
+    const system = systems.find(s => s.id === systemId);
+    if (!system) return;
+    const updated = {
+      ...system,
+      voiceRecordings: (system.voiceRecordings || []).filter(r => r.id !== recordingId),
+      updatedAt: Date.now(),
+    };
+    persistSystem(updated);
   };
 
   const addProjectVoiceRecording = (systemId: string, projectId: string, name: string, dataUrl: string, duration?: string) => {
-    const newRec: VoiceRecording = { id: crypto.randomUUID(), name, dataUrl, duration, addedAt: Date.now() };
-    setSystems(systems.map(s => s.id !== systemId ? s : {
-      ...s,
-      projects: s.projects.map(p => p.id !== projectId ? p : { ...p, voiceRecordings: [...(p.voiceRecordings || []), newRec], updatedAt: Date.now() }),
-    }));
-
     const system = systems.find(s => s.id === systemId);
-    const updatedProject = system?.projects.find(p => p.id === projectId);
-    if (isFilesystem && updatedProject) {
-      filesystemAdapter.saveProject(systemId, updatedProject).catch(err =>
-        console.error('[NotesStore] Failed to add project voice recording in filesystem:', err)
-      );
-    }
+    const project = system?.projects.find(p => p.id === projectId);
+    if (!project) return;
+    const newRec: VoiceRecording = { id: crypto.randomUUID(), name, dataUrl, duration, addedAt: Date.now() };
+    const updated = {
+      ...project,
+      voiceRecordings: [...(project.voiceRecordings || []), newRec],
+      updatedAt: Date.now(),
+    };
+    persistProject(systemId, updated);
   };
 
   const removeProjectVoiceRecording = (systemId: string, projectId: string, recordingId: string) => {
-    setSystems(systems.map(s => s.id !== systemId ? s : {
-      ...s,
-      projects: s.projects.map(p => p.id !== projectId ? p : { ...p, voiceRecordings: (p.voiceRecordings || []).filter(r => r.id !== recordingId), updatedAt: Date.now() }),
-    }));
-
     const system = systems.find(s => s.id === systemId);
-    const updatedProject = system?.projects.find(p => p.id === projectId);
-    if (isFilesystem && updatedProject) {
-      filesystemAdapter.saveProject(systemId, updatedProject).catch(err =>
-        console.error('[NotesStore] Failed to remove project voice recording in filesystem:', err)
-      );
-    }
+    const project = system?.projects.find(p => p.id === projectId);
+    if (!project) return;
+    const updated = {
+      ...project,
+      voiceRecordings: (project.voiceRecordings || []).filter(r => r.id !== recordingId),
+      updatedAt: Date.now(),
+    };
+    persistProject(systemId, updated);
   };
 
-  // Link operations
-  const addSystemLink = (systemId: string, url: string, title?: string) => {
-    const newLink: SavedLink = { id: crypto.randomUUID(), url, title, addedAt: Date.now() };
-    setSystems(systems.map(s => s.id !== systemId ? s : { ...s, links: [...(s.links || []), newLink], updatedAt: Date.now() }));
+  // ── Link operations ───────────────────────────────────────────────
 
-    const updatedSystem = systems.find(s => s.id === systemId);
-    if (isFilesystem && updatedSystem) {
-      filesystemAdapter.saveSystem(updatedSystem).catch(err =>
-        console.error('[NotesStore] Failed to add system link in filesystem:', err)
-      );
-    }
+  const addSystemLink = (systemId: string, url: string, title?: string) => {
+    const system = systems.find(s => s.id === systemId);
+    if (!system) return;
+    const newLink: SavedLink = { id: crypto.randomUUID(), url, title, addedAt: Date.now() };
+    const updated = {
+      ...system,
+      links: [...(system.links || []), newLink],
+      updatedAt: Date.now(),
+    };
+    persistSystem(updated);
   };
 
   const removeSystemLink = (systemId: string, linkId: string) => {
-    setSystems(systems.map(s => s.id !== systemId ? s : { ...s, links: (s.links || []).filter(l => l.id !== linkId), updatedAt: Date.now() }));
-
-    const updatedSystem = systems.find(s => s.id === systemId);
-    if (isFilesystem && updatedSystem) {
-      filesystemAdapter.saveSystem(updatedSystem).catch(err =>
-        console.error('[NotesStore] Failed to remove system link in filesystem:', err)
-      );
-    }
+    const system = systems.find(s => s.id === systemId);
+    if (!system) return;
+    const updated = {
+      ...system,
+      links: (system.links || []).filter(l => l.id !== linkId),
+      updatedAt: Date.now(),
+    };
+    persistSystem(updated);
   };
 
   const updateSystemLink = (systemId: string, linkId: string, updates: Partial<SavedLink>) => {
-    setSystems(systems.map(s => s.id !== systemId ? s : {
-      ...s,
-      links: (s.links || []).map(l => l.id !== linkId ? l : { ...l, ...updates }),
+    const system = systems.find(s => s.id === systemId);
+    if (!system) return;
+    const updated = {
+      ...system,
+      links: (system.links || []).map(l => l.id !== linkId ? l : { ...l, ...updates }),
       updatedAt: Date.now(),
-    }));
-
-    const updatedSystem = systems.find(s => s.id === systemId);
-    if (isFilesystem && updatedSystem) {
-      filesystemAdapter.saveSystem(updatedSystem).catch(err =>
-        console.error('[NotesStore] Failed to update system link in filesystem:', err)
-      );
-    }
+    };
+    persistSystem(updated);
   };
 
   const addProjectLink = (systemId: string, projectId: string, url: string, title?: string) => {
-    const newLink: SavedLink = { id: crypto.randomUUID(), url, title, addedAt: Date.now() };
-    setSystems(systems.map(s => s.id !== systemId ? s : {
-      ...s,
-      projects: s.projects.map(p => p.id !== projectId ? p : { ...p, links: [...(p.links || []), newLink], updatedAt: Date.now() }),
-    }));
-
     const system = systems.find(s => s.id === systemId);
-    const updatedProject = system?.projects.find(p => p.id === projectId);
-    if (isFilesystem && updatedProject) {
-      filesystemAdapter.saveProject(systemId, updatedProject).catch(err =>
-        console.error('[NotesStore] Failed to add project link in filesystem:', err)
-      );
-    }
+    const project = system?.projects.find(p => p.id === projectId);
+    if (!project) return;
+    const newLink: SavedLink = { id: crypto.randomUUID(), url, title, addedAt: Date.now() };
+    const updated = {
+      ...project,
+      links: [...(project.links || []), newLink],
+      updatedAt: Date.now(),
+    };
+    persistProject(systemId, updated);
   };
 
   const removeProjectLink = (systemId: string, projectId: string, linkId: string) => {
-    setSystems(systems.map(s => s.id !== systemId ? s : {
-      ...s,
-      projects: s.projects.map(p => p.id !== projectId ? p : { ...p, links: (p.links || []).filter(l => l.id !== linkId), updatedAt: Date.now() }),
-    }));
-
     const system = systems.find(s => s.id === systemId);
-    const updatedProject = system?.projects.find(p => p.id === projectId);
-    if (isFilesystem && updatedProject) {
-      filesystemAdapter.saveProject(systemId, updatedProject).catch(err =>
-        console.error('[NotesStore] Failed to remove project link in filesystem:', err)
-      );
-    }
+    const project = system?.projects.find(p => p.id === projectId);
+    if (!project) return;
+    const updated = {
+      ...project,
+      links: (project.links || []).filter(l => l.id !== linkId),
+      updatedAt: Date.now(),
+    };
+    persistProject(systemId, updated);
   };
 
   const updateProjectLink = (systemId: string, projectId: string, linkId: string, updates: Partial<SavedLink>) => {
-    setSystems(systems.map(s => s.id !== systemId ? s : {
-      ...s,
-      projects: s.projects.map(p => p.id !== projectId ? p : {
-        ...p,
-        links: (p.links || []).map(l => l.id !== linkId ? l : { ...l, ...updates }),
-        updatedAt: Date.now(),
-      }),
-    }));
-
     const system = systems.find(s => s.id === systemId);
-    const updatedProject = system?.projects.find(p => p.id === projectId);
-    if (isFilesystem && updatedProject) {
-      filesystemAdapter.saveProject(systemId, updatedProject).catch(err =>
-        console.error('[NotesStore] Failed to update project link in filesystem:', err)
-      );
-    }
-  };
-
-  // Detail notes operations
-  const updateSystemDetailNotes = (systemId: string, notes: string) => {
-    setSystems(systems.map(s => s.id !== systemId ? s : { ...s, detailNotes: notes, updatedAt: Date.now() }));
-
-    const updatedSystem = systems.find(s => s.id === systemId);
-    if (isFilesystem && updatedSystem) {
-      filesystemAdapter.saveSystem(updatedSystem).catch(err =>
-        console.error('[NotesStore] Failed to update system detail notes in filesystem:', err)
-      );
-    }
-  };
-
-  const updateProjectDetailNotes = (systemId: string, projectId: string, notes: string) => {
-    setSystems(systems.map(s => s.id !== systemId ? s : {
-      ...s,
-      projects: s.projects.map(p => p.id !== projectId ? p : { ...p, detailNotes: notes, updatedAt: Date.now() }),
-    }));
-
-    const system = systems.find(s => s.id === systemId);
-    const updatedProject = system?.projects.find(p => p.id === projectId);
-    if (isFilesystem && updatedProject) {
-      filesystemAdapter.saveProject(systemId, updatedProject).catch(err =>
-        console.error('[NotesStore] Failed to update project detail notes in filesystem:', err)
-      );
-    }
-  };
-
-  // Tag operations for system/project
-  const addSystemTag = (systemId: string, tag: string) => {
-    setSystems(systems.map(s => s.id !== systemId ? s : {
-      ...s,
-      tags: [...new Set([...(s.tags || []), tag.toLowerCase()])],
+    const project = system?.projects.find(p => p.id === projectId);
+    if (!project) return;
+    const updated = {
+      ...project,
+      links: (project.links || []).map(l => l.id !== linkId ? l : { ...l, ...updates }),
       updatedAt: Date.now(),
-    }));
+    };
+    persistProject(systemId, updated);
+  };
 
-    const updatedSystem = systems.find(s => s.id === systemId);
-    if (isFilesystem && updatedSystem) {
-      filesystemAdapter.saveSystem(updatedSystem).catch(err =>
-        console.error('[NotesStore] Failed to add system tag in filesystem:', err)
-      );
-    }
+  // ── Detail notes operations ───────────────────────────────────────
+
+  const updateSystemDetailNotes = (systemId: string, detailNotes: string) => {
+    const system = systems.find(s => s.id === systemId);
+    if (!system) return;
+    const updated = { ...system, detailNotes, updatedAt: Date.now() };
+    persistSystem(updated);
+  };
+
+  const updateProjectDetailNotes = (systemId: string, projectId: string, detailNotes: string) => {
+    const system = systems.find(s => s.id === systemId);
+    const project = system?.projects.find(p => p.id === projectId);
+    if (!project) return;
+    const updated = { ...project, detailNotes, updatedAt: Date.now() };
+    persistProject(systemId, updated);
+  };
+
+  // ── Tag operations for system/project ─────────────────────────────
+
+  const addSystemTag = (systemId: string, tag: string) => {
+    const system = systems.find(s => s.id === systemId);
+    if (!system) return;
+    const updated = {
+      ...system,
+      tags: [...new Set([...(system.tags || []), tag.toLowerCase()])],
+      updatedAt: Date.now(),
+    };
+    persistSystem(updated);
   };
 
   const removeSystemTag = (systemId: string, tag: string) => {
-    setSystems(systems.map(s => s.id !== systemId ? s : {
-      ...s,
-      tags: (s.tags || []).filter(t => t !== tag),
+    const system = systems.find(s => s.id === systemId);
+    if (!system) return;
+    const updated = {
+      ...system,
+      tags: (system.tags || []).filter(t => t !== tag),
       updatedAt: Date.now(),
-    }));
-
-    const updatedSystem = systems.find(s => s.id === systemId);
-    if (isFilesystem && updatedSystem) {
-      filesystemAdapter.saveSystem(updatedSystem).catch(err =>
-        console.error('[NotesStore] Failed to remove system tag in filesystem:', err)
-      );
-    }
+    };
+    persistSystem(updated);
   };
 
   const addProjectTag = (systemId: string, projectId: string, tag: string) => {
-    setSystems(systems.map(s => s.id !== systemId ? s : {
-      ...s,
-      projects: s.projects.map(p => p.id !== projectId ? p : {
-        ...p,
-        tags: [...new Set([...(p.tags || []), tag.toLowerCase()])],
-        updatedAt: Date.now(),
-      }),
-    }));
-
     const system = systems.find(s => s.id === systemId);
-    const updatedProject = system?.projects.find(p => p.id === projectId);
-    if (isFilesystem && updatedProject) {
-      filesystemAdapter.saveProject(systemId, updatedProject).catch(err =>
-        console.error('[NotesStore] Failed to add project tag in filesystem:', err)
-      );
-    }
+    const project = system?.projects.find(p => p.id === projectId);
+    if (!project) return;
+    const updated = {
+      ...project,
+      tags: [...new Set([...(project.tags || []), tag.toLowerCase()])],
+      updatedAt: Date.now(),
+    };
+    persistProject(systemId, updated);
   };
 
   const removeProjectTag = (systemId: string, projectId: string, tag: string) => {
-    setSystems(systems.map(s => s.id !== systemId ? s : {
-      ...s,
-      projects: s.projects.map(p => p.id !== projectId ? p : {
-        ...p,
-        tags: (p.tags || []).filter(t => t !== tag),
-        updatedAt: Date.now(),
-      }),
-    }));
-
     const system = systems.find(s => s.id === systemId);
-    const updatedProject = system?.projects.find(p => p.id === projectId);
-    if (isFilesystem && updatedProject) {
-      filesystemAdapter.saveProject(systemId, updatedProject).catch(err =>
-        console.error('[NotesStore] Failed to remove project tag in filesystem:', err)
-      );
-    }
+    const project = system?.projects.find(p => p.id === projectId);
+    if (!project) return;
+    const updated = {
+      ...project,
+      tags: (project.tags || []).filter(t => t !== tag),
+      updatedAt: Date.now(),
+    };
+    persistProject(systemId, updated);
   };
 
-  // System contacts operations
-  const addSystemContact = (systemId: string, contact: Omit<Contact, "id">) => {
-    const newContact: Contact = { id: crypto.randomUUID(), ...contact };
-    setSystems(systems.map(s => s.id !== systemId ? s : {
-      ...s,
-      contacts: [...(s.contacts || []), newContact],
-      updatedAt: Date.now(),
-    }));
+  // ── Contact operations ────────────────────────────────────────────
 
-    const updatedSystem = systems.find(s => s.id === systemId);
-    if (isFilesystem && updatedSystem) {
-      filesystemAdapter.saveSystem(updatedSystem).catch(err =>
-        console.error('[NotesStore] Failed to add system contact in filesystem:', err)
-      );
-    }
+  const addSystemContact = (systemId: string, contact: Omit<Contact, "id">) => {
+    const system = systems.find(s => s.id === systemId);
+    if (!system) return;
+    const newContact: Contact = { id: crypto.randomUUID(), ...contact };
+    const updated = {
+      ...system,
+      contacts: [...(system.contacts || []), newContact],
+      updatedAt: Date.now(),
+    };
+    persistSystem(updated);
   };
 
   const removeSystemContact = (systemId: string, contactId: string) => {
-    setSystems(systems.map(s => s.id !== systemId ? s : {
-      ...s,
-      contacts: (s.contacts || []).filter(c => c.id !== contactId),
+    const system = systems.find(s => s.id === systemId);
+    if (!system) return;
+    const updated = {
+      ...system,
+      contacts: (system.contacts || []).filter(c => c.id !== contactId),
       updatedAt: Date.now(),
-    }));
-
-    const updatedSystem = systems.find(s => s.id === systemId);
-    if (isFilesystem && updatedSystem) {
-      filesystemAdapter.saveSystem(updatedSystem).catch(err =>
-        console.error('[NotesStore] Failed to remove system contact in filesystem:', err)
-      );
-    }
+    };
+    persistSystem(updated);
   };
 
-  // Project contacts operations
   const addProjectContact = (systemId: string, projectId: string, contact: Omit<Contact, "id">) => {
-    const newContact: Contact = { id: crypto.randomUUID(), ...contact };
-    setSystems(systems.map(s => s.id !== systemId ? s : {
-      ...s,
-      projects: s.projects.map(p => p.id !== projectId ? p : {
-        ...p,
-        contacts: [...(p.contacts || []), newContact],
-        updatedAt: Date.now(),
-      }),
-      updatedAt: Date.now(),
-    }));
-
     const system = systems.find(s => s.id === systemId);
-    const updatedProject = system?.projects.find(p => p.id === projectId);
-    if (isFilesystem && updatedProject) {
-      filesystemAdapter.saveProject(systemId, updatedProject).catch(err =>
-        console.error('[NotesStore] Failed to add project contact in filesystem:', err)
-      );
-    }
+    const project = system?.projects.find(p => p.id === projectId);
+    if (!project) return;
+    const newContact: Contact = { id: crypto.randomUUID(), ...contact };
+    const updated = {
+      ...project,
+      contacts: [...(project.contacts || []), newContact],
+      updatedAt: Date.now(),
+    };
+    persistProject(systemId, updated);
   };
 
   const removeProjectContact = (systemId: string, projectId: string, contactId: string) => {
-    setSystems(systems.map(s => s.id !== systemId ? s : {
-      ...s,
-      projects: s.projects.map(p => p.id !== projectId ? p : {
-        ...p,
-        contacts: (p.contacts || []).filter(c => c.id !== contactId),
-        updatedAt: Date.now(),
-      }),
-      updatedAt: Date.now(),
-    }));
-
     const system = systems.find(s => s.id === systemId);
-    const updatedProject = system?.projects.find(p => p.id === projectId);
-    if (isFilesystem && updatedProject) {
-      filesystemAdapter.saveProject(systemId, updatedProject).catch(err =>
-        console.error('[NotesStore] Failed to remove project contact in filesystem:', err)
-      );
-    }
+    const project = system?.projects.find(p => p.id === projectId);
+    if (!project) return;
+    const updated = {
+      ...project,
+      contacts: (project.contacts || []).filter(c => c.id !== contactId),
+      updatedAt: Date.now(),
+    };
+    persistProject(systemId, updated);
   };
 
-  // Note-specific operations
+  // ── Note-specific operations ──────────────────────────────────────
+
   const addNotePhoto = (noteId: string, name: string, dataUrl: string) => {
     const newPhoto: Photo = { id: crypto.randomUUID(), name, dataUrl, addedAt: Date.now() };
 
-    // Update React state
-    setNotes(prevNotes => {
-      return prevNotes.map(n => {
+    // Optimistic update — merge photo into current cache state (not stale `notes`)
+    queryClient.setQueryData<Note[]>(queryKeys.notes.all, (old = []) =>
+      old.map(n => {
         if (n.id !== noteId) return n;
-        const updatedNote = { ...n, photos: [...(n.photos || []), newPhoto], updatedAt: Date.now() };
+        return {
+          ...n,
+          photos: [...(n.photos || []), newPhoto],
+          updatedAt: Date.now(),
+        };
+      })
+    );
 
-        // Save to filesystem after state update
-        if (isFilesystem) {
-          filesystemAdapter.saveAttachment(noteId, name, dataUrl).catch(err =>
-            console.error('[NotesStore] Failed to save photo attachment to filesystem:', err)
-          );
-          filesystemAdapter.saveNote(updatedNote).catch(err =>
-            console.error('[NotesStore] Failed to save note with photo in filesystem:', err)
-          );
+    // Save the photo file and update SQLite
+    if (isFilesystem && vaultPath) {
+      (async () => {
+        try {
+          await filesystemAdapter.saveAttachment(noteId, name, dataUrl);
+          // Read latest from cache (includes concurrent content/attachment updates)
+          const db = await getDb(vaultPath);
+          const latestNote = queryClient.getQueryData<Note[]>(queryKeys.notes.all)?.find(n => n.id === noteId);
+          if (latestNote) {
+            await upsertNote(db, latestNote);
+          }
+        } catch (err) {
+          console.error('[NotesStore] Failed to save photo:', err);
         }
-
-        return updatedNote;
-      });
-    });
+        queryClient.invalidateQueries({ queryKey: queryKeys.notes.all });
+      })();
+    }
   };
 
   const removeNotePhoto = (noteId: string, photoId: string) => {
-    setNotes(notes.map(n => n.id !== noteId ? n : { ...n, photos: (n.photos || []).filter(p => p.id !== photoId), updatedAt: Date.now() }));
-
-    const updatedNote = notes.find(n => n.id === noteId);
-    if (isFilesystem && updatedNote) {
-      filesystemAdapter.saveNote(updatedNote).catch(err =>
-        console.error('[NotesStore] Failed to remove note photo in filesystem:', err)
-      );
-    }
+    const note = notes.find(n => n.id === noteId);
+    if (!note) return;
+    const updated: Note = {
+      ...note,
+      photos: (note.photos || []).filter(p => p.id !== photoId),
+      updatedAt: Date.now(),
+    };
+    persistNote(updated);
   };
 
   const addNoteVoiceRecording = (noteId: string, name: string, dataUrl: string, duration?: string) => {
+    const note = notes.find(n => n.id === noteId);
+    if (!note) return;
     const newRec: VoiceRecording = { id: crypto.randomUUID(), name, dataUrl, duration, addedAt: Date.now() };
-    setNotes(notes.map(n => n.id !== noteId ? n : { ...n, voiceRecordings: [...(n.voiceRecordings || []), newRec], updatedAt: Date.now() }));
-
-    const updatedNote = notes.find(n => n.id === noteId);
-    if (isFilesystem && updatedNote) {
-      filesystemAdapter.saveNote(updatedNote).catch(err =>
-        console.error('[NotesStore] Failed to add note voice recording in filesystem:', err)
-      );
-    }
+    const updated: Note = {
+      ...note,
+      voiceRecordings: [...(note.voiceRecordings || []), newRec],
+      updatedAt: Date.now(),
+    };
+    persistNote(updated);
   };
 
   const removeNoteVoiceRecording = (noteId: string, recordingId: string) => {
-    setNotes(notes.map(n => n.id !== noteId ? n : { ...n, voiceRecordings: (n.voiceRecordings || []).filter(r => r.id !== recordingId), updatedAt: Date.now() }));
-
-    const updatedNote = notes.find(n => n.id === noteId);
-    if (isFilesystem && updatedNote) {
-      filesystemAdapter.saveNote(updatedNote).catch(err =>
-        console.error('[NotesStore] Failed to remove note voice recording in filesystem:', err)
-      );
-    }
+    const note = notes.find(n => n.id === noteId);
+    if (!note) return;
+    const updated: Note = {
+      ...note,
+      voiceRecordings: (note.voiceRecordings || []).filter(r => r.id !== recordingId),
+      updatedAt: Date.now(),
+    };
+    persistNote(updated);
   };
 
   const addNoteLink = (noteId: string, url: string, title?: string) => {
+    const note = notes.find(n => n.id === noteId);
+    if (!note) return;
     const newLink: SavedLink = { id: crypto.randomUUID(), url, title, addedAt: Date.now() };
-    setNotes(notes.map(n => n.id !== noteId ? n : { ...n, links: [...(n.links || []), newLink], updatedAt: Date.now() }));
-
-    const updatedNote = notes.find(n => n.id === noteId);
-    if (isFilesystem && updatedNote) {
-      filesystemAdapter.saveNote(updatedNote).catch(err =>
-        console.error('[NotesStore] Failed to add note link in filesystem:', err)
-      );
-    }
+    const updated: Note = {
+      ...note,
+      links: [...(note.links || []), newLink],
+      updatedAt: Date.now(),
+    };
+    persistNote(updated);
   };
 
   const removeNoteLink = (noteId: string, linkId: string) => {
-    setNotes(notes.map(n => n.id !== noteId ? n : { ...n, links: (n.links || []).filter(l => l.id !== linkId), updatedAt: Date.now() }));
-
-    const updatedNote = notes.find(n => n.id === noteId);
-    if (isFilesystem && updatedNote) {
-      filesystemAdapter.saveNote(updatedNote).catch(err =>
-        console.error('[NotesStore] Failed to remove note link in filesystem:', err)
-      );
-    }
+    const note = notes.find(n => n.id === noteId);
+    if (!note) return;
+    const updated: Note = {
+      ...note,
+      links: (note.links || []).filter(l => l.id !== linkId),
+      updatedAt: Date.now(),
+    };
+    persistNote(updated);
   };
 
   const updateNoteLink = (noteId: string, linkId: string, updates: Partial<SavedLink>) => {
-    setNotes(notes.map(n => n.id !== noteId ? n : {
-      ...n,
-      links: (n.links || []).map(l => l.id !== linkId ? l : { ...l, ...updates }),
+    const note = notes.find(n => n.id === noteId);
+    if (!note) return;
+    const updated: Note = {
+      ...note,
+      links: (note.links || []).map(l => l.id !== linkId ? l : { ...l, ...updates }),
       updatedAt: Date.now(),
-    }));
-
-    const updatedNote = notes.find(n => n.id === noteId);
-    if (isFilesystem && updatedNote) {
-      filesystemAdapter.saveNote(updatedNote).catch(err =>
-        console.error('[NotesStore] Failed to update note link in filesystem:', err)
-      );
-    }
+    };
+    persistNote(updated);
   };
 
   const addNoteTag = (noteId: string, tag: string) => {
-    setNotes(notes.map(n => n.id !== noteId ? n : {
-      ...n,
-      tags: [...new Set([...(n.tags || []), tag.toLowerCase()])],
+    const note = notes.find(n => n.id === noteId);
+    if (!note) return;
+    const updated: Note = {
+      ...note,
+      tags: [...new Set([...(note.tags || []), tag.toLowerCase()])],
       updatedAt: Date.now(),
-    }));
-
-    const updatedNote = notes.find(n => n.id === noteId);
-    if (isFilesystem && updatedNote) {
-      filesystemAdapter.saveNote(updatedNote).catch(err =>
-        console.error('[NotesStore] Failed to add note tag in filesystem:', err)
-      );
-    }
+    };
+    persistNote(updated);
   };
 
   const removeNoteTag = (noteId: string, tag: string) => {
-    setNotes(notes.map(n => n.id !== noteId ? n : {
-      ...n,
-      tags: (n.tags || []).filter(t => t !== tag),
+    const note = notes.find(n => n.id === noteId);
+    if (!note) return;
+    const updated: Note = {
+      ...note,
+      tags: (note.tags || []).filter(t => t !== tag),
       updatedAt: Date.now(),
-    }));
-
-    const updatedNote = notes.find(n => n.id === noteId);
-    if (isFilesystem && updatedNote) {
-      filesystemAdapter.saveNote(updatedNote).catch(err =>
-        console.error('[NotesStore] Failed to remove note tag in filesystem:', err)
-      );
-    }
+    };
+    persistNote(updated);
   };
 
   const renameNoteTag = (noteId: string, oldTag: string, newTag: string) => {
-    setNotes(notes.map(n => {
-      if (n.id !== noteId) return n;
-      const tags = (n.tags || []).map(t => t === oldTag ? newTag.toLowerCase() : t);
-      const tagColors = n.tagColors ? { ...n.tagColors } : {};
-      if (tagColors[oldTag]) {
-        tagColors[newTag.toLowerCase()] = tagColors[oldTag];
-        delete tagColors[oldTag];
-      }
-      return { ...n, tags: [...new Set(tags)], tagColors, updatedAt: Date.now() };
-    }));
-
-    const updatedNote = notes.find(n => n.id === noteId);
-    if (isFilesystem && updatedNote) {
-      filesystemAdapter.saveNote(updatedNote).catch(err =>
-        console.error('[NotesStore] Failed to rename note tag in filesystem:', err)
-      );
+    const note = notes.find(n => n.id === noteId);
+    if (!note) return;
+    const tags = (note.tags || []).map(t => t === oldTag ? newTag.toLowerCase() : t);
+    const tagColors = note.tagColors ? { ...note.tagColors } : {};
+    if (tagColors[oldTag]) {
+      tagColors[newTag.toLowerCase()] = tagColors[oldTag];
+      delete tagColors[oldTag];
     }
+    const updated: Note = {
+      ...note,
+      tags: [...new Set(tags)],
+      tagColors,
+      updatedAt: Date.now(),
+    };
+    persistNote(updated);
   };
 
   const updateNoteCustomType = (noteId: string, customType: string) => {
-    setNotes(notes.map(n => n.id !== noteId ? n : { ...n, customType: customType || undefined, updatedAt: Date.now() }));
-
-    const updatedNote = notes.find(n => n.id === noteId);
-    if (isFilesystem && updatedNote) {
-      filesystemAdapter.saveNote(updatedNote).catch(err =>
-        console.error('[NotesStore] Failed to update note custom type in filesystem:', err)
-      );
-    }
+    const note = notes.find(n => n.id === noteId);
+    if (!note) return;
+    const updated: Note = {
+      ...note,
+      customType: customType || undefined,
+      updatedAt: Date.now(),
+    };
+    persistNote(updated);
   };
 
   const updateNoteDetailNotes = (noteId: string, detailNotes: string) => {
-    setNotes(notes.map(n => n.id !== noteId ? n : { ...n, detailNotes, updatedAt: Date.now() }));
-
-    const updatedNote = notes.find(n => n.id === noteId);
-    if (isFilesystem && updatedNote) {
-      filesystemAdapter.saveNote(updatedNote).catch(err =>
-        console.error('[NotesStore] Failed to update note detail notes in filesystem:', err)
-      );
-    }
+    const note = notes.find(n => n.id === noteId);
+    if (!note) return;
+    const updated: Note = { ...note, detailNotes, updatedAt: Date.now() };
+    persistNote(updated);
   };
 
-  // Contact operations for notes
   const addNoteContact = (noteId: string, contact: Omit<Contact, "id">) => {
+    const note = notes.find(n => n.id === noteId);
+    if (!note) return;
     const newContact: Contact = { ...contact, id: crypto.randomUUID() };
-    setNotes(notes.map(n => n.id !== noteId ? n : {
-      ...n,
-      contacts: [...(n.contacts || []), newContact],
+    const updated: Note = {
+      ...note,
+      contacts: [...(note.contacts || []), newContact],
       updatedAt: Date.now(),
-    }));
-
-    const updatedNote = notes.find(n => n.id === noteId);
-    if (isFilesystem && updatedNote) {
-      filesystemAdapter.saveNote(updatedNote).catch(err =>
-        console.error('[NotesStore] Failed to add note contact in filesystem:', err)
-      );
-    }
+    };
+    persistNote(updated);
   };
 
   const removeNoteContact = (noteId: string, contactId: string) => {
-    setNotes(notes.map(n => n.id !== noteId ? n : {
-      ...n,
-      contacts: (n.contacts || []).filter(c => c.id !== contactId),
+    const note = notes.find(n => n.id === noteId);
+    if (!note) return;
+    const updated: Note = {
+      ...note,
+      contacts: (note.contacts || []).filter(c => c.id !== contactId),
       updatedAt: Date.now(),
-    }));
-
-    const updatedNote = notes.find(n => n.id === noteId);
-    if (isFilesystem && updatedNote) {
-      filesystemAdapter.saveNote(updatedNote).catch(err =>
-        console.error('[NotesStore] Failed to remove note contact in filesystem:', err)
-      );
-    }
+    };
+    persistNote(updated);
   };
 
   const updateNoteContact = (noteId: string, contactId: string, updates: Partial<Contact>) => {
-    setNotes(notes.map(n => n.id !== noteId ? n : {
-      ...n,
-      contacts: (n.contacts || []).map(c => c.id !== contactId ? c : { ...c, ...updates }),
+    const note = notes.find(n => n.id === noteId);
+    if (!note) return;
+    const updated: Note = {
+      ...note,
+      contacts: (note.contacts || []).map(c => c.id !== contactId ? c : { ...c, ...updates }),
       updatedAt: Date.now(),
-    }));
-
-    const updatedNote = notes.find(n => n.id === noteId);
-    if (isFilesystem && updatedNote) {
-      filesystemAdapter.saveNote(updatedNote).catch(err =>
-        console.error('[NotesStore] Failed to update note contact in filesystem:', err)
-      );
-    }
+    };
+    persistNote(updated);
   };
+
+  // ── Store object ──────────────────────────────────────────────────
 
   const store: NotesStore = {
     systems,

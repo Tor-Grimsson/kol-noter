@@ -72,12 +72,7 @@ export const EditPane = ({
             }, 0);
           }
 
-          // Save the attachment
-          if (onSaveAttachment) {
-            onSaveAttachment(filename, reader.result as string);
-          }
-
-          // Also add to photos for metadata
+          // Save as photo (writes to _assets + updates metadata)
           if (onAddPhoto) {
             onAddPhoto(filename, reader.result as string);
           }
@@ -86,7 +81,7 @@ export const EditPane = ({
         break;
       }
     }
-  }, [content, onChange, onSaveAttachment, onAddPhoto, textareaRef]);
+  }, [content, onChange, onAddPhoto, textareaRef]);
 
   return (
     <div className="flex-1 flex overflow-hidden h-full">

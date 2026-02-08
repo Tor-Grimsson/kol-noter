@@ -204,6 +204,8 @@ export interface NoteFrontmatter {
     targetDate?: string;
     status?: string;
   };
+  photos?: string[];
+  files?: string[];
   created: string;  // ISO date string
   updated: string;  // ISO date string
 }

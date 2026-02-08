@@ -2,7 +2,7 @@ import { Trash2, RotateCcw, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui-elements/atoms/Button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { UnifiedSidebar } from "@/components/app-shell";
+import { ExplorerSidebar } from "@/components/app-shell";
 import { useNotesStore } from "@/store/NotesContext";
 import {
   AlertDialog,
@@ -26,7 +26,7 @@ const Trash = () => {
 
   return (
     <div className="flex h-screen bg-background">
-      <UnifiedSidebar
+      <ExplorerSidebar
         onNoteSelect={handleExplorerSelect}
         onSystemProjectSelect={handleExplorerSelect}
         onHierarchySelect={handleExplorerSelect}

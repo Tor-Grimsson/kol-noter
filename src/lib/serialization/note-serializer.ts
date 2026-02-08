@@ -124,6 +124,20 @@ export class NoteSerializer {
       };
     }
 
+    // Serialize photos as filename list
+    if (note.photos?.length) {
+      frontmatter.photos = note.photos.map(p => p.name);
+    }
+
+    // Serialize file attachments (excluding photos) as filename list
+    if (note.attachments) {
+      const photoNames = new Set((note.photos || []).map(p => p.name));
+      const fileNames = Object.keys(note.attachments).filter(f => !photoNames.has(f));
+      if (fileNames.length) {
+        frontmatter.files = fileNames;
+      }
+    }
+
     let content: string;
     let visualData: VisualNode[] | undefined;
 
@@ -152,11 +166,21 @@ export class NoteSerializer {
   }
 
   /**
+   * Convert a slug like `my-cool-note` to title case: `My Cool Note`.
+   */
+  private static deslugify(slug: string): string {
+    return slug
+      .replace(/-/g, ' ')
+      .replace(/\b\w/g, c => c.toUpperCase());
+  }
+
+  /**
    * Deserialize markdown to a note
    * @param markdown The markdown file content
    * @param visualData Optional visual node data from sidecar file
+   * @param filename Optional filename (without extension) used as title fallback
    */
-  static deserialize(markdown: string, visualData?: VisualNode[]): Note {
+  static deserialize(markdown: string, visualData?: VisualNode[], filename?: string): Note {
     const { data, content } = matter(markdown);
     const fm = data as NoteFrontmatter;
 
@@ -190,11 +214,32 @@ export class NoteSerializer {
       };
     }
 
+    // Reconstruct photos from frontmatter filenames
+    if (fm.photos?.length) {
+      note.photos = fm.photos.map(name => ({
+        id: name,
+        name,
+        dataUrl: '',  // resolved at render time via convertFileSrc
+        addedAt: note.createdAt,
+      }));
+    }
+
+    // Reconstruct file attachments from frontmatter filenames
+    if (fm.files?.length) {
+      note.attachments = {};
+      for (const name of fm.files) {
+        note.attachments[name] = '';  // resolved at render time via convertFileSrc
+      }
+    }
+
     // Parse content based on editor type
     switch (note.editorType) {
       case 'standard':
         note.content = content.trim();
         note.title = this.extractTitleFromMarkdown(content);
+        if (note.title === 'Untitled' && filename) {
+          note.title = this.deslugify(filename);
+        }
         note.preview = this.extractPreviewFromMarkdown(content);
         break;
 
@@ -202,7 +247,7 @@ export class NoteSerializer {
         note.content = this.deserializeModularContent(content);
         const blocks = note.content as Block[];
         const headingBlock = blocks.find(b => b.type === 'heading');
-        note.title = headingBlock?.content || 'Untitled';
+        note.title = headingBlock?.content || (filename ? this.deslugify(filename) : 'Untitled');
         const previewBlock = blocks.find(b => b.content && b.type !== 'section');
         note.preview = previewBlock?.content?.slice(0, 100) || '';
         break;
@@ -210,8 +255,10 @@ export class NoteSerializer {
       case 'visual':
         note.content = visualData || [];
         const nodes = note.content as VisualNode[];
-        note.title = this.extractTitleFromMarkdown(content) ||
-          (nodes[0]?.label !== 'Start' ? nodes[0]?.label : 'Flowchart');
+        const visualTitle = this.extractTitleFromMarkdown(content);
+        note.title = (visualTitle && visualTitle !== 'Untitled')
+          ? visualTitle
+          : (filename ? this.deslugify(filename) : (nodes[0]?.label !== 'Start' ? nodes[0]?.label : 'Flowchart'));
         note.preview = `Flowchart with ${nodes.length} nodes`;
         break;
     }

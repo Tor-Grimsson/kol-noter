@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { MoreHorizontal, Plus, User, Target as TargetIcon, Calendar as CalendarIcon, ChevronDown, GripVertical, X, FileText, ChevronLeft, ChevronRight, ArrowDown, ArrowRight } from "lucide-react";
+import { MoreHorizontal, User, Target as TargetIcon, Calendar as CalendarIcon, ChevronDown, GripVertical, X, FileText, ChevronLeft, ChevronRight, ArrowDown, ArrowRight } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui-elements/atoms/Button";
@@ -16,6 +16,7 @@ import { useNotesStore, EditorType } from "@/store/NotesContext";
 import { useLocalStorage } from "@/hooks/useLocalStorage";
 import { MetadataProject } from "@/components/metadata/MetadataProject";
 import { MetadataNote } from "@/components/metadata/MetadataNote";
+import { NoteTypeDropdown } from "@/components/ui-elements/molecules/NoteTypeDropdown";
 
 interface OverviewProjectProps {
   systemId: string;
@@ -172,8 +173,8 @@ export const OverviewProject = ({
     }
   };
 
-  const handleAddNote = () => {
-    const newNote = addNote(systemId, projectId, "modular");
+  const handleAddNote = (type: EditorType) => {
+    const newNote = addNote(systemId, projectId, type);
     if (newNote && onNoteSelect) {
       onNoteSelect(newNote.id, newNote.editorType);
     }
@@ -509,10 +510,12 @@ export const OverviewProject = ({
                   placeholder="Filter..."
                   className="pl-3 bg-input border-input-border h-8 w-48 text-xs"
                 />
-                <Button size="sm" className="gap-2 bg-primary hover:bg-primary-hover text-primary-foreground text-xs h-8" onClick={handleAddNote}>
-                  <Plus className="w-3 h-3" />
-                  Add note
-                </Button>
+                <NoteTypeDropdown
+                  onSelect={handleAddNote}
+                  align="end"
+                  label="Add note"
+                  triggerClassName="gap-2 bg-primary hover:bg-primary-hover text-primary-foreground text-xs h-8"
+                />
                 {onClose && (
                   <Button variant="ghost" size="icon" onClick={onClose} className="h-8 w-8">
                     <X className="w-4 h-4" />
@@ -611,10 +614,12 @@ export const OverviewProject = ({
                   placeholder="Filter..."
                   className="pl-3 bg-input border-input-border h-8 w-48 text-xs"
                 />
-                <Button size="sm" className="gap-2 bg-primary hover:bg-primary-hover text-primary-foreground text-xs h-8" onClick={handleAddNote}>
-                  <Plus className="w-3 h-3" />
-                  Add note
-                </Button>
+                <NoteTypeDropdown
+                  onSelect={handleAddNote}
+                  align="end"
+                  label="Add note"
+                  triggerClassName="gap-2 bg-primary hover:bg-primary-hover text-primary-foreground text-xs h-8"
+                />
                 {onClose && (
                   <Button variant="ghost" size="icon" onClick={onClose} className="h-8 w-8">
                     <X className="w-4 h-4" />

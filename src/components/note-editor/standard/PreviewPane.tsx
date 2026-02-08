@@ -1,28 +1,60 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useMemo } from "react";
+import { resolveAssetUrl } from "@/lib/persistence/asset-resolver";
 
 interface PreviewPaneProps {
   content: string;
   onClickToEdit?: () => void;
   attachments?: { [filename: string]: string };
   photos?: Array<{ id: string; name: string; dataUrl: string; addedAt: number }>;
+  noteAssetBasePath?: string;
 }
 
 // Custom component to render Obsidian-style image embeds: ![[filename]]
 const ObsidianImage = ({
   filename,
   attachments,
-  photos
+  photos,
+  noteAssetBasePath,
 }: {
   filename: string;
   attachments?: { [filename: string]: string };
   photos?: Array<{ id: string; name: string; dataUrl: string; addedAt: number }>;
+  noteAssetBasePath?: string;
 }) => {
-  // First check attachments (file-based storage in _assets folder)
+  // Priority 1: Resolve from disk via asset protocol (filesystem mode)
+  if (noteAssetBasePath) {
+    const src = resolveAssetUrl(noteAssetBasePath, filename);
+    return (
+      <img
+        src={src}
+        alt={filename}
+        className="rounded-lg shadow-md max-w-full my-4"
+        onError={(e) => {
+          // If asset protocol fails, try fallbacks
+          const target = e.currentTarget;
+          const fallbackSrc = attachments?.[filename]
+            || photos?.find(p => p.name === filename)?.dataUrl;
+          if (fallbackSrc) {
+            target.src = fallbackSrc;
+          } else {
+            // Replace img with error message
+            target.style.display = 'none';
+            const span = document.createElement('span');
+            span.className = 'inline-block px-2 py-1 bg-muted rounded text-xs text-muted-foreground';
+            span.textContent = `Image not found: ${filename}`;
+            target.parentNode?.insertBefore(span, target);
+          }
+        }}
+      />
+    );
+  }
+
+  // Priority 2: Data URL from attachments map (immediate paste fallback)
   let src = attachments?.[filename];
 
-  // Fall back to photos array (legacy storage as data URL)
+  // Priority 3: Legacy photos array
   if (!src && photos) {
     const photo = photos.find(p => p.name === filename);
     src = photo?.dataUrl;
@@ -44,7 +76,7 @@ const ObsidianImage = ({
   );
 };
 
-export const PreviewPane = ({ content, onClickToEdit, attachments, photos }: PreviewPaneProps) => {
+export const PreviewPane = ({ content, onClickToEdit, attachments, photos, noteAssetBasePath }: PreviewPaneProps) => {
   // Process content to replace ![[filename]] with placeholder markers
   // We'll split the content and render images inline
   const processedContent = useMemo(() => {
@@ -96,7 +128,15 @@ export const PreviewPane = ({ content, onClickToEdit, attachments, photos }: Pre
         >
           {processedContent.map((part, index) => {
             if (part.type === 'image') {
-              return <ObsidianImage key={index} filename={part.value} attachments={attachments} photos={photos} />;
+              return (
+                <ObsidianImage
+                  key={index}
+                  filename={part.value}
+                  attachments={attachments}
+                  photos={photos}
+                  noteAssetBasePath={noteAssetBasePath}
+                />
+              );
             }
             return <ReactMarkdown key={index} remarkPlugins={[remarkGfm]}>{part.value}</ReactMarkdown>;
           })}
