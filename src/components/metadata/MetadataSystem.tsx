@@ -19,6 +19,7 @@ export const MetadataSystem = ({ systemId, onClose }: MetadataSystemProps) => {
   const {
     getSystem,
     updateSystemMetadata,
+    updateSystemMetrics,
     deleteSystem,
     addSystemPhoto,
     removeSystemPhoto,
@@ -102,7 +103,7 @@ export const MetadataSystem = ({ systemId, onClose }: MetadataSystemProps) => {
             <SectionMetrics
               metrics={system.metrics}
               stats={stats}
-              onUpdateMetrics={(metrics) => updateSystemMetadata(systemId, { metrics } as any)}
+              onUpdateMetrics={(metrics) => updateSystemMetrics(systemId, metrics)}
               isBottomPanel
             />
           </div>

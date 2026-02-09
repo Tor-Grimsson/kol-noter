@@ -25,13 +25,10 @@ export function resolveAssetUrl(noteAssetBasePath: string, filename: string): st
  * Build the absolute path to a note's `_assets/` directory.
  *
  * @param vaultPath - Absolute vault root path
- * @param noteRelativePath - Relative path from vault root to the .md file (from idMap)
+ * @param noteRelativePath - Relative path from vault root to the note folder (from idMap)
  * @returns Absolute path to the note's `_assets/` directory
  */
 export function getNoteAssetBasePath(vaultPath: string, noteRelativePath: string): string {
-  // noteRelativePath is like "system-slug/project-slug/note-slug.md"
-  // We need the directory containing the note, then append _assets
-  const lastSlash = noteRelativePath.lastIndexOf('/');
-  const noteDir = lastSlash >= 0 ? noteRelativePath.substring(0, lastSlash) : '';
-  return `${vaultPath}/${noteDir}/_assets`;
+  // noteRelativePath is now a folder path: "system-slug/project-slug/note-slug"
+  return `${vaultPath}/${noteRelativePath}/_assets`;
 }

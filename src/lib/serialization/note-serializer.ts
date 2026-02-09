@@ -9,6 +9,7 @@ import matter from 'gray-matter';
 import slugify from 'slugify';
 import type {
   Note,
+  Page,
   Block,
   VisualNode,
   System,
@@ -18,6 +19,8 @@ import type {
 } from '@/store/NotesContext';
 import type {
   NoteFrontmatter,
+  NoteMetadataFrontmatter,
+  PageFrontmatter,
   SystemFrontmatter,
   ProjectFrontmatter,
 } from '@/lib/persistence/types';
@@ -115,13 +118,13 @@ export class NoteSerializer {
       frontmatter.customType = note.customType;
     }
     if (note.metrics) {
-      frontmatter.metrics = {
-        health: note.metrics.health,
-        priority: note.metrics.priority,
-        lead: note.metrics.lead,
-        targetDate: note.metrics.targetDate,
-        status: note.metrics.status,
-      };
+      const m: Record<string, string> = {};
+      if (note.metrics.health) m.health = note.metrics.health;
+      if (note.metrics.priority) m.priority = note.metrics.priority;
+      if (note.metrics.lead) m.lead = note.metrics.lead;
+      if (note.metrics.targetDate) m.targetDate = note.metrics.targetDate;
+      if (note.metrics.status) m.status = note.metrics.status;
+      if (Object.keys(m).length) frontmatter.metrics = m;
     }
 
     // Serialize photos as filename list
@@ -498,7 +501,15 @@ export class NoteSerializer {
    */
   private static extractTitleFromMarkdown(content: string): string {
     const match = content.match(/^#\s+(.+)$/m);
-    return match ? match[1].trim() : 'Untitled';
+    if (!match) return 'Untitled';
+    return match[1]
+      .replace(/\*\*(.+?)\*\*/g, '$1')   // bold
+      .replace(/\*(.+?)\*/g, '$1')        // italic
+      .replace(/__(.+?)__/g, '$1')        // bold alt
+      .replace(/_(.+?)_/g, '$1')          // italic alt
+      .replace(/~~(.+?)~~/g, '$1')        // strikethrough
+      .replace(/`(.+?)`/g, '$1')          // inline code
+      .trim();
   }
 
   /**
@@ -511,6 +522,478 @@ export class NoteSerializer {
       .replace(/\[([^\]]+)\]\(.*?\)/g, '$1')
       .slice(0, 100)
       .trim();
+  }
+}
+
+// ── Shared content helpers (used by NoteSerializer, PageSerializer) ──────────
+
+/**
+ * Serialize standard (markdown) content
+ */
+export function serializeStandardContent(content: string): string {
+  return content || '';
+}
+
+/**
+ * Serialize modular (block) content to markdown with markers
+ */
+export function serializeModularContent(blocks: Block[]): string {
+  if (!blocks?.length) {
+    return '';
+  }
+
+  const lines: string[] = [];
+
+  for (const block of blocks) {
+    const markerParts = [block.type];
+    if (block.metadata?.level) {
+      markerParts.push(String(block.metadata.level));
+    }
+    if (block.metadata?.language) {
+      markerParts.push(block.metadata.language);
+    }
+    if (block.metadata?.listType) {
+      markerParts.push(block.metadata.listType);
+    }
+
+    lines.push(`<!-- block:${markerParts.join(':')}:${block.id} -->`);
+
+    switch (block.type) {
+      case 'heading':
+        const level = block.metadata?.level || 1;
+        lines.push(`${'#'.repeat(level)} ${block.content}`);
+        break;
+
+      case 'paragraph':
+        lines.push(block.content);
+        break;
+
+      case 'code':
+        const lang = block.metadata?.language || '';
+        lines.push(`\`\`\`${lang}`);
+        lines.push(block.content);
+        lines.push('```');
+        break;
+
+      case 'list':
+        const items = block.content.split('\n');
+        const prefix = block.metadata?.listType === 'numbered' ? '1.' : '-';
+        items.forEach(item => {
+          lines.push(`${prefix} ${item}`);
+        });
+        break;
+
+      case 'image':
+        lines.push(`![](${block.content})`);
+        break;
+
+      case 'section':
+        lines.push(`---`);
+        lines.push(`**${block.content}**`);
+        break;
+    }
+
+    lines.push('');
+  }
+
+  return lines.join('\n').trim();
+}
+
+/**
+ * Deserialize modular content from markdown with markers
+ */
+export function deserializeModularContent(markdown: string): Block[] {
+  const blocks: Block[] = [];
+  const lines = markdown.split('\n');
+
+  let currentBlock: Partial<Block> | null = null;
+  let contentLines: string[] = [];
+  let inCodeBlock = false;
+
+  const finishBlock = () => {
+    if (currentBlock && currentBlock.id && currentBlock.type) {
+      let content = contentLines.join('\n').trim();
+
+      if (currentBlock.type === 'heading') {
+        content = content.replace(/^#+\s*/, '');
+      } else if (currentBlock.type === 'code') {
+        content = content.replace(/^```\w*\n?/, '').replace(/\n?```$/, '');
+      } else if (currentBlock.type === 'list') {
+        content = content
+          .split('\n')
+          .map(line => line.replace(/^[-*]\s*|^\d+\.\s*/, ''))
+          .join('\n');
+      } else if (currentBlock.type === 'section') {
+        content = content.replace(/^---\n?\*\*/, '').replace(/\*\*$/, '');
+      } else if (currentBlock.type === 'image') {
+        const match = content.match(/!\[.*?\]\((.*?)\)/);
+        content = match ? match[1] : content;
+      }
+
+      blocks.push({
+        id: currentBlock.id,
+        type: currentBlock.type as Block['type'],
+        content,
+        metadata: currentBlock.metadata,
+      });
+    }
+    currentBlock = null;
+    contentLines = [];
+  };
+
+  for (const line of lines) {
+    const markerMatch = line.match(/^<!--\s*block:(\w+)(?::(\w+))?(?::(\w+))?(?::([^:]+))?\s*-->$/);
+
+    if (markerMatch) {
+      finishBlock();
+
+      const [, type, param1, param2, blockId] = markerMatch;
+      currentBlock = {
+        id: blockId || `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        type: type as Block['type'],
+        metadata: {},
+      };
+
+      if (type === 'heading' && param1) {
+        currentBlock.metadata!.level = parseInt(param1, 10);
+      } else if (type === 'code' && param1) {
+        currentBlock.metadata!.language = param1;
+      } else if (type === 'list' && param1) {
+        currentBlock.metadata!.listType = param1 as 'bullet' | 'numbered';
+      }
+
+      continue;
+    }
+
+    if (line.startsWith('```')) {
+      inCodeBlock = !inCodeBlock;
+    }
+
+    if (currentBlock) {
+      contentLines.push(line);
+    } else if (line.trim()) {
+      if (line.startsWith('#')) {
+        currentBlock = {
+          id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          type: 'heading',
+          metadata: { level: (line.match(/^#+/) || ['#'])[0].length },
+        };
+        contentLines.push(line);
+      } else if (line.startsWith('```')) {
+        currentBlock = {
+          id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          type: 'code',
+          metadata: { language: line.slice(3).trim() },
+        };
+        inCodeBlock = true;
+        contentLines.push(line);
+      } else if (line.match(/^[-*]\s/) || line.match(/^\d+\.\s/)) {
+        currentBlock = {
+          id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          type: 'list',
+          metadata: { listType: line.match(/^\d/) ? 'numbered' : 'bullet' },
+        };
+        contentLines.push(line);
+      } else {
+        currentBlock = {
+          id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          type: 'paragraph',
+        };
+        contentLines.push(line);
+      }
+    }
+  }
+
+  finishBlock();
+  return blocks;
+}
+
+/**
+ * Serialize visual content to markdown stub + sidecar data
+ */
+export function serializeVisualContent(
+  nodes: VisualNode[],
+  title: string
+): { markdown: string; visualData: VisualNode[] } {
+  const lines = [
+    `# ${title || 'Flowchart'}`,
+    '',
+    '> This is a visual note. Open in KOL Noter to edit the flowchart.',
+    '',
+    '## Nodes',
+    '',
+  ];
+
+  for (const node of nodes) {
+    lines.push(`- **${node.type}**: ${node.label}`);
+  }
+
+  return {
+    markdown: lines.join('\n'),
+    visualData: nodes,
+  };
+}
+
+/**
+ * Extract title from markdown content
+ */
+export function extractTitleFromMarkdown(content: string): string {
+  const match = content.match(/^#\s+(.+)$/m);
+  if (!match) return 'Untitled';
+  return match[1]
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/\*(.+?)\*/g, '$1')
+    .replace(/__(.+?)__/g, '$1')
+    .replace(/_(.+?)_/g, '$1')
+    .replace(/~~(.+?)~~/g, '$1')
+    .replace(/`(.+?)`/g, '$1')
+    .trim();
+}
+
+/**
+ * Extract preview from markdown content
+ */
+export function extractPreviewFromMarkdown(content: string): string {
+  return content
+    .replace(/^#+\s+/gm, '')
+    .replace(/!\[.*?\]\(.*?\)/g, '')
+    .replace(/\[([^\]]+)\]\(.*?\)/g, '$1')
+    .slice(0, 100)
+    .trim();
+}
+
+/**
+ * Convert a slug like `my-cool-note` to title case: `My Cool Note`.
+ */
+export function deslugify(slug: string): string {
+  return slug
+    .replace(/-/g, ' ')
+    .replace(/\b\w/g, c => c.toUpperCase());
+}
+
+/**
+ * Serialize page content based on editor type.
+ * Returns markdown body + optional visual sidecar data.
+ */
+export function serializeContentByType(
+  editorType: EditorType,
+  content: Block[] | string | VisualNode[],
+  title: string,
+): { body: string; visualData?: VisualNode[] } {
+  switch (editorType) {
+    case 'standard':
+      return { body: serializeStandardContent(content as string) };
+    case 'modular':
+      return { body: serializeModularContent(content as Block[]) };
+    case 'visual': {
+      const result = serializeVisualContent(content as VisualNode[], title);
+      return { body: result.markdown, visualData: result.visualData };
+    }
+    default:
+      return { body: '' };
+  }
+}
+
+/**
+ * Deserialize page content based on editor type.
+ * Returns the parsed content + derived title + preview.
+ */
+export function deserializeContentByType(
+  editorType: EditorType,
+  markdownBody: string,
+  visualData?: VisualNode[],
+  slugFallback?: string,
+): { content: Block[] | string | VisualNode[]; title: string; preview: string } {
+  switch (editorType) {
+    case 'standard': {
+      const content = markdownBody.trim();
+      let title = extractTitleFromMarkdown(markdownBody);
+      if (title === 'Untitled' && slugFallback) {
+        title = deslugify(slugFallback);
+      }
+      const preview = extractPreviewFromMarkdown(markdownBody);
+      return { content, title, preview };
+    }
+    case 'modular': {
+      const blocks = deserializeModularContent(markdownBody);
+      const headingBlock = blocks.find(b => b.type === 'heading');
+      const title = headingBlock?.content || (slugFallback ? deslugify(slugFallback) : 'Untitled');
+      const previewBlock = blocks.find(b => b.content && b.type !== 'section');
+      const preview = previewBlock?.content?.slice(0, 100) || '';
+      return { content: blocks, title, preview };
+    }
+    case 'visual': {
+      const nodes = visualData || [];
+      const extractedTitle = extractTitleFromMarkdown(markdownBody);
+      const title = (extractedTitle && extractedTitle !== 'Untitled')
+        ? extractedTitle
+        : (slugFallback ? deslugify(slugFallback) : (nodes[0]?.label !== 'Start' ? nodes[0]?.label : 'Flowchart'));
+      const preview = `Flowchart with ${nodes.length} nodes`;
+      return { content: nodes, title, preview };
+    }
+    default:
+      return { content: '', title: 'Untitled', preview: '' };
+  }
+}
+
+// ── NoteMetadataSerializer (for _note.md in folder-based notes) ─────────────
+
+/**
+ * Serializes/deserializes the _note.md file that holds note-level metadata.
+ * Follows the same pattern as SystemSerializer / ProjectSerializer.
+ */
+export class NoteMetadataSerializer {
+  static serialize(note: Note): string {
+    const frontmatter: NoteMetadataFrontmatter = {
+      id: note.id,
+      created: formatDate(note.createdAt),
+      updated: formatDate(note.updatedAt),
+    };
+
+    if (note.tags?.length) frontmatter.tags = note.tags;
+    if (note.tagColors && Object.keys(note.tagColors).length) {
+      frontmatter.tagColors = note.tagColors;
+    }
+    if (note.favorite) frontmatter.favorite = note.favorite;
+    if (note.color) frontmatter.color = note.color;
+    if (note.icon !== undefined) frontmatter.icon = note.icon;
+    if (note.customType) frontmatter.customType = note.customType;
+    if (note.metrics) {
+      frontmatter.metrics = {
+        health: note.metrics.health,
+        priority: note.metrics.priority,
+        lead: note.metrics.lead,
+        targetDate: note.metrics.targetDate,
+        status: note.metrics.status,
+      };
+    }
+    if (note.photos?.length) {
+      frontmatter.photos = note.photos.map(p => p.name);
+    }
+    if (note.attachments) {
+      const photoNames = new Set((note.photos || []).map(p => p.name));
+      const fileNames = Object.keys(note.attachments).filter(f => !photoNames.has(f));
+      if (fileNames.length) frontmatter.files = fileNames;
+    }
+
+    const content = [
+      `# ${note.title}`,
+      '',
+      note.preview || '',
+    ].filter(Boolean).join('\n');
+
+    return matter.stringify(content, frontmatter as any);
+  }
+
+  static deserialize(markdown: string): Partial<Note> {
+    const { data, content } = matter(markdown);
+    const fm = data as NoteMetadataFrontmatter;
+
+    const note: Partial<Note> = {
+      id: fm.id || `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      tags: fm.tags || [],
+      tagColors: fm.tagColors,
+      favorite: fm.favorite,
+      color: fm.color,
+      icon: fm.icon,
+      customType: fm.customType,
+      createdAt: parseDate(fm.created),
+      updatedAt: parseDate(fm.updated),
+      pages: [],
+    };
+
+    // Parse metrics
+    if (fm.metrics) {
+      note.metrics = {
+        health: fm.metrics.health as ItemMetrics['health'],
+        priority: fm.metrics.priority as ItemMetrics['priority'],
+        lead: fm.metrics.lead,
+        targetDate: fm.metrics.targetDate,
+        status: fm.metrics.status as ItemMetrics['status'],
+      };
+    }
+
+    // Reconstruct photos from frontmatter filenames
+    if (fm.photos?.length) {
+      note.photos = fm.photos.map(name => ({
+        id: name,
+        name,
+        dataUrl: '',
+        addedAt: note.createdAt!,
+      }));
+    }
+
+    // Reconstruct file attachments from frontmatter filenames
+    if (fm.files?.length) {
+      note.attachments = {};
+      for (const name of fm.files) {
+        note.attachments[name] = '';
+      }
+    }
+
+    // Extract title from markdown body
+    const titleMatch = content.match(/^#\s+(.+)$/m);
+    note.title = titleMatch ? titleMatch[1].trim() : 'Untitled';
+
+    return note;
+  }
+}
+
+// ── PageSerializer (for individual page .md files) ──────────────────────────
+
+/**
+ * Serializes/deserializes page .md files within a note folder.
+ * Reuses the shared content serialization helpers.
+ */
+export class PageSerializer {
+  static serialize(page: Page, noteTitle: string): { markdown: string; visualData?: VisualNode[] } {
+    const frontmatter: PageFrontmatter = {
+      id: page.id,
+      editorType: page.editorType,
+      order: page.order,
+      created: formatDate(page.createdAt),
+      updated: formatDate(page.updatedAt),
+    };
+
+    const { body, visualData } = serializeContentByType(
+      page.editorType,
+      page.content,
+      page.title || noteTitle,
+    );
+
+    const markdown = matter.stringify(body, frontmatter as any);
+    return { markdown, visualData };
+  }
+
+  static deserialize(
+    markdown: string,
+    noteId: string,
+    slug: string,
+    visualData?: VisualNode[],
+  ): Page {
+    const { data, content } = matter(markdown);
+    const fm = data as PageFrontmatter;
+
+    const editorType: EditorType = fm.editorType || 'standard';
+    const { content: parsedContent, title, preview } = deserializeContentByType(
+      editorType,
+      content,
+      visualData,
+      slug,
+    );
+
+    return {
+      id: fm.id || `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      noteId,
+      slug,
+      title,
+      preview,
+      order: fm.order ?? 0,
+      editorType,
+      content: parsedContent,
+      createdAt: parseDate(fm.created),
+      updatedAt: parseDate(fm.updated),
+    };
   }
 }
 
@@ -543,13 +1026,13 @@ export class SystemSerializer {
       frontmatter.icon = system.icon;
     }
     if (system.metrics) {
-      frontmatter.metrics = {
-        health: system.metrics.health,
-        priority: system.metrics.priority,
-        lead: system.metrics.lead,
-        targetDate: system.metrics.targetDate,
-        status: system.metrics.status,
-      };
+      const m: Record<string, string> = {};
+      if (system.metrics.health) m.health = system.metrics.health;
+      if (system.metrics.priority) m.priority = system.metrics.priority;
+      if (system.metrics.lead) m.lead = system.metrics.lead;
+      if (system.metrics.targetDate) m.targetDate = system.metrics.targetDate;
+      if (system.metrics.status) m.status = system.metrics.status;
+      if (Object.keys(m).length) frontmatter.metrics = m;
     }
     if (system.createdAt) {
       frontmatter.created = formatDate(system.createdAt);
@@ -639,13 +1122,13 @@ export class ProjectSerializer {
       frontmatter.icon = project.icon;
     }
     if (project.metrics) {
-      frontmatter.metrics = {
-        health: project.metrics.health,
-        priority: project.metrics.priority,
-        lead: project.metrics.lead,
-        targetDate: project.metrics.targetDate,
-        status: project.metrics.status,
-      };
+      const m: Record<string, string> = {};
+      if (project.metrics.health) m.health = project.metrics.health;
+      if (project.metrics.priority) m.priority = project.metrics.priority;
+      if (project.metrics.lead) m.lead = project.metrics.lead;
+      if (project.metrics.targetDate) m.targetDate = project.metrics.targetDate;
+      if (project.metrics.status) m.status = project.metrics.status;
+      if (Object.keys(m).length) frontmatter.metrics = m;
     }
     if (project.createdAt) {
       frontmatter.created = formatDate(project.createdAt);

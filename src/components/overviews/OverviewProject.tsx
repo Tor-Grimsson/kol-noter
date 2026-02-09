@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from "react";
-import { MoreHorizontal, User, Target as TargetIcon, Calendar as CalendarIcon, ChevronDown, GripVertical, X, FileText, ChevronLeft, ChevronRight, ArrowDown, ArrowRight } from "lucide-react";
+import { MoreHorizontal, User, Network, Calendar as CalendarIcon, ChevronDown, GripVertical, X, FileText, ChevronLeft, ChevronRight, ArrowDown, ArrowRight, Star, Heart, Code, Book, Briefcase, Home, Music } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui-elements/atoms/Button";
+import { LabeledInput } from "@/components/ui-elements/atoms/LabeledInput";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,12 +11,15 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import { format } from "date-fns";
 import { useNotesStore, EditorType } from "@/store/NotesContext";
 import { useLocalStorage } from "@/hooks/useLocalStorage";
 import { MetadataProject } from "@/components/metadata/MetadataProject";
 import { MetadataNote } from "@/components/metadata/MetadataNote";
 import { NoteTypeDropdown } from "@/components/ui-elements/molecules/NoteTypeDropdown";
+import { DropdownSelect } from "@/components/ui-elements/molecules/DropdownSelect";
 
 interface OverviewProjectProps {
   systemId: string;
@@ -35,6 +38,29 @@ interface Column {
   width: number;
 }
 
+const healthMap: Record<string, string> = { "Good": "good", "Warning": "warning", "Critical": "critical" };
+const priorityMap: Record<string, string> = { "High": "high", "Medium": "medium", "Low": "low" };
+const statusMap: Record<string, string> = { "Not Started": "not_started", "In Progress": "in_progress", "Done": "done", "Blocked": "blocked" };
+const reverseHealthMap: Record<string, string> = Object.fromEntries(Object.entries(healthMap).map(([k, v]) => [v, k]));
+const reversePriorityMap: Record<string, string> = Object.fromEntries(Object.entries(priorityMap).map(([k, v]) => [v, k]));
+const reverseStatusMap: Record<string, string> = Object.fromEntries(Object.entries(statusMap).map(([k, v]) => [v, k]));
+
+const getIcon = (iconName?: string | null, className?: string, color?: string) => {
+  const style = color ? { color } : undefined;
+  switch (iconName) {
+    case "star": return <Star className={className} style={style} />;
+    case "heart": return <Heart className={className} style={style} />;
+    case "code": return <Code className={className} style={style} />;
+    case "book": return <Book className={className} style={style} />;
+    case "briefcase": return <Briefcase className={className} style={style} />;
+    case "home": return <Home className={className} style={style} />;
+    case "music": return <Music className={className} style={style} />;
+    case "folder": return <Folder className={className} style={style} />;
+    case "file": return <FileText className={className} style={style} />;
+    default: return <FileText className={className} style={style} />;
+  }
+};
+
 export const OverviewProject = ({
   systemId,
   projectId,
@@ -45,7 +71,7 @@ export const OverviewProject = ({
 }: OverviewProjectProps) => {
   const {
     getSystem, getProject, getNotesByProject,
-    addNote, getNote,
+    addNote, getNote, updateNoteMetrics,
   } = useNotesStore();
   const system = getSystem(systemId);
   const project = getProject(systemId, projectId);
@@ -145,24 +171,6 @@ export const OverviewProject = ({
     );
   }
 
-  const getHealthColor = (health?: "good" | "warning" | "critical") => {
-    switch (health) {
-      case "good": return "text-success";
-      case "warning": return "text-warning";
-      case "critical": return "text-destructive";
-      default: return "text-muted-foreground";
-    }
-  };
-
-  const getPriorityBadge = (priority?: "low" | "medium" | "high") => {
-    const variants = {
-      low: "bg-muted text-muted-foreground",
-      medium: "bg-warning/20 text-warning",
-      high: "bg-destructive/20 text-destructive",
-    };
-    return priority ? variants[priority] : "bg-muted text-muted-foreground";
-  };
-
   const handleResizeStart = (columnId: ColumnId, e: React.MouseEvent) => {
     e.preventDefault();
     setResizingColumn(columnId);
@@ -193,77 +201,75 @@ export const OverviewProject = ({
       case "name":
         return (
           <div className="flex items-center gap-2">
-            <TargetIcon
-              className="w-3 h-3 text-muted-foreground cursor-pointer hover:text-foreground transition-colors"
-              onClick={(e) => {
-                e.stopPropagation();
-                onNoteSelect?.(note.id, note.editorType);
-              }}
-            />
-            <span className="text-xs font-medium text-foreground">{note.title}</span>
+            <button
+              onClick={(e) => { e.stopPropagation(); onNoteSelect?.(note.id, note.editorType); }}
+              className="hover:opacity-80 transition-opacity"
+            >
+              {getIcon(note.icon, "w-3 h-3 shrink-0", note.color)}
+            </button>
+            <span className="text-xs font-medium" style={{ color: note.color }}>{note.title}</span>
           </div>
         );
       case "health":
         return (
-          <div className="flex items-center gap-2">
-            <div className={cn("w-1.5 h-1.5 rounded-full", getHealthColor(note.metrics?.health))}
-                 style={{ backgroundColor: note.metrics?.health ? undefined : 'currentColor' }} />
-            <span className="text-xs text-muted-foreground">
-              {note.metrics?.health === "good" && "On track"}
-              {note.metrics?.health === "warning" && "No updates"}
-              {note.metrics?.health === "critical" && "At risk"}
-              {!note.metrics?.health && "No updates"}
-            </span>
-          </div>
+          <DropdownSelect
+            variant="table"
+            value={note.metrics?.health ? reverseHealthMap[note.metrics.health] : undefined}
+            options={["Good", "Warning", "Critical"]}
+            placeholder="—"
+            onChange={(val) => updateNoteMetrics(note.id, { health: healthMap[val] as "good" | "warning" | "critical" })}
+          />
         );
       case "priority":
-        return note.metrics?.priority ? (
-          <Badge className={cn("text-[10px] px-1.5 py-0", getPriorityBadge(note.metrics.priority))}>
-            {note.metrics.priority}
-          </Badge>
-        ) : (
-          <span className="text-xs text-muted-foreground">-</span>
+        return (
+          <DropdownSelect
+            variant="table"
+            value={note.metrics?.priority ? reversePriorityMap[note.metrics.priority] : undefined}
+            options={["High", "Medium", "Low"]}
+            placeholder="—"
+            onChange={(val) => updateNoteMetrics(note.id, { priority: priorityMap[val] as "high" | "medium" | "low" })}
+          />
         );
       case "lead":
-        return note.metrics?.lead ? (
-          <div className="flex items-center gap-2">
-            <div className="w-5 h-5 rounded-full bg-accent flex items-center justify-center">
-              <span className="text-[10px] font-medium text-accent-foreground">
-                {note.metrics.lead.split(" ").map(n => n[0]).join("")}
-              </span>
-            </div>
-            <span className="text-xs text-foreground">{note.metrics.lead}</span>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2 text-muted-foreground">
-            <User className="w-3 h-3" />
-            <span className="text-xs">No lead</span>
-          </div>
+        return (
+          <LabeledInput
+            variant="table"
+            label="Lead"
+            value={note.metrics?.lead || ""}
+            onChange={(val) => updateNoteMetrics(note.id, { lead: val || undefined })}
+          />
         );
       case "targetDate":
-        return note.metrics?.targetDate ? (
-          <div className="flex items-center gap-2">
-            <CalendarIcon className="w-3 h-3 text-muted-foreground" />
-            <span className="text-xs text-foreground">{note.metrics.targetDate}</span>
-          </div>
-        ) : (
-          <span className="text-xs text-muted-foreground">-</span>
+        return (
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-1 text-xs justify-start hover:bg-transparent"
+              >
+                {note.metrics?.targetDate ? format(new Date(note.metrics.targetDate), "MMM d, yyyy") : "—"}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="start">
+              <Calendar
+                mode="single"
+                selected={note.metrics?.targetDate ? new Date(note.metrics.targetDate) : undefined}
+                onSelect={(date) => updateNoteMetrics(note.id, { targetDate: date?.toISOString() || undefined })}
+                initialFocus
+              />
+            </PopoverContent>
+          </Popover>
         );
       case "status":
-        const statusPercent = note.metrics?.status === 'done' ? 100
-          : note.metrics?.status === 'in_progress' ? 45
-          : note.metrics?.status === 'blocked' ? 25
-          : 0;
         return (
-          <div className="flex items-center gap-2">
-            <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden max-w-[80px]">
-              <div
-                className="h-full bg-primary transition-all"
-                style={{ width: `${statusPercent}%` }}
-              />
-            </div>
-            <span className="text-[10px] text-muted-foreground min-w-[28px]">{statusPercent}%</span>
-          </div>
+          <DropdownSelect
+            variant="table"
+            value={note.metrics?.status ? reverseStatusMap[note.metrics.status] : undefined}
+            options={["Not Started", "In Progress", "Done", "Blocked"]}
+            placeholder="—"
+            onChange={(val) => updateNoteMetrics(note.id, { status: statusMap[val] as "not_started" | "in_progress" | "done" | "blocked" })}
+          />
         );
     }
   };
@@ -406,7 +412,7 @@ export const OverviewProject = ({
           </div>
         </div>
       ) : (
-        <div className="flex-1 overflow-auto">
+        <div className="flex-1 overflow-auto" onClick={() => setSelectedRowId(null)}>
           <table className="w-full">
             <thead className="sticky top-0 bg-background border-b border-border z-10">
               <tr>
@@ -437,10 +443,10 @@ export const OverviewProject = ({
                 <tr
                   key={note.id}
                   className={cn(
-                    "border-b border-border hover:bg-muted/50 transition-colors cursor-pointer",
+                    "border-b border-border transition-colors cursor-pointer",
                     selectedRowId === note.id && "bg-primary/10 border-l-2 border-l-primary"
                   )}
-                  onClick={() => handleRowClick(note.id)}
+                  onClick={(e) => { e.stopPropagation(); handleRowClick(note.id); }}
                   onDoubleClick={() => handleRowDoubleClick(note.id, note.editorType)}
                 >
                   {columns.map(column => (
@@ -506,9 +512,12 @@ export const OverviewProject = ({
               </div>
 
               <div className="flex items-center gap-2">
-                <Input
-                  placeholder="Filter..."
-                  className="pl-3 bg-input border-input-border h-8 w-48 text-xs"
+                <LabeledInput
+                  label="Filter..."
+                  value=""
+                  onChange={() => {}}
+                  variant="filter"
+                  className="w-48"
                 />
                 <NoteTypeDropdown
                   onSelect={handleAddNote}
@@ -610,9 +619,12 @@ export const OverviewProject = ({
               </div>
 
               <div className="flex items-center gap-2">
-                <Input
-                  placeholder="Filter..."
-                  className="pl-3 bg-input border-input-border h-8 w-48 text-xs"
+                <LabeledInput
+                  label="Filter..."
+                  value=""
+                  onChange={() => {}}
+                  variant="filter"
+                  className="w-48"
                 />
                 <NoteTypeDropdown
                   onSelect={handleAddNote}

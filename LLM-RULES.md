@@ -16,9 +16,9 @@ During/after work:
 
 ## Current State
 
-- **Status:** SQLite index layer implemented, ready for runtime testing
+- **Status:** TipTap WYSIWYG with syntax reveal and image focus
 - **Last Session:** 2026-02-08
-- **Active Work:** SQLite index layer complete (replaces React useState with SQLite + React Query). Stale closure bug fix.
+- **Active Work:** Syntax reveal plugin (headings, bold, italic, underline, code). Image click-to-edit path via custom NodeView. Title extraction strips markdown syntax.
 - **Roadmap:** See `docs/roadmap/local-first-markdown-architecture.md`
 
 ## Data Hierarchy (Important)

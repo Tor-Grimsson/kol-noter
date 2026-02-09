@@ -6,6 +6,7 @@
  */
 
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Loader2, FolderOpen, Plus, AlertCircle, HardDrive } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { isTauri, pickVaultFolder, getDefaultVaultPath, isValidVault } from '@/lib/tauri-bridge';
@@ -71,6 +72,7 @@ type AppState = 'loading' | 'setup' | 'ready' | 'error';
  * Vault Provider Component
  */
 export function VaultProvider({ children }: VaultProviderProps) {
+  const queryClient = useQueryClient();
   const [appState, setAppState] = useState<AppState>('loading');
   const [vaultPath, setVaultPath] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -141,24 +143,9 @@ export function VaultProvider({ children }: VaultProviderProps) {
         return;
       }
 
+      // Persist config and hard-reload so all state (React, SQLite, watchers) resets cleanly
       await filesystemAdapter.setVaultPath(selected, false);
-      setVaultPath(selected);
-      setError(null);
-
-      // Start file watcher
-      await fileWatcher.start(selected);
-      searchIndex.setVaultPath(selected);
-
-      // Initialize SQLite index BEFORE rendering children
-      try {
-        const db = await getDb(selected);
-        const data = await filesystemAdapter.loadAll();
-        await fullReindex(db, data);
-      } catch (err) {
-        console.error('[VaultProvider] Failed to initialize SQLite index:', err);
-      }
-
-      setAppState('ready');
+      window.location.reload();
     } catch (err) {
       setError(String(err));
     }
@@ -175,26 +162,9 @@ export function VaultProvider({ children }: VaultProviderProps) {
 
       if (!selected) return;
 
+      // Persist config and hard-reload so all state (React, SQLite, watchers) resets cleanly
       await filesystemAdapter.setVaultPath(selected, true);
-      setVaultPath(selected);
-      setError(null);
-
-      // Start file watcher
-      await fileWatcher.start(selected);
-      searchIndex.setVaultPath(selected);
-
-      // Initialize SQLite index (empty vault) BEFORE rendering children
-      try {
-        const db = await getDb(selected);
-        await fullReindex(db, { systems: [], notes: [], trash: [] });
-      } catch (err) {
-        console.error('[VaultProvider] Failed to initialize SQLite index:', err);
-      }
-
-      setAppState('ready');
-
-      // Note: We don't auto-migrate localStorage data to new vaults.
-      // If user wants to migrate, they can use the migration option from the menu.
+      window.location.reload();
     } catch (err) {
       setError(String(err));
     }

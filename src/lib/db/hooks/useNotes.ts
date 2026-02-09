@@ -29,6 +29,7 @@ interface NoteRow {
   voice_recordings_json: string;
   links_json: string;
   contacts_json: string;
+  pages_json: string;
   metrics_json: string | null;
   created_at: number;
   updated_at: number;
@@ -60,6 +61,7 @@ export function rowToNote(row: NoteRow): Note {
     voiceRecordings: JSON.parse(row.voice_recordings_json),
     links: JSON.parse(row.links_json),
     contacts: JSON.parse(row.contacts_json),
+    pages: JSON.parse(row.pages_json || '[]'),
     metrics: row.metrics_json ? JSON.parse(row.metrics_json) : undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

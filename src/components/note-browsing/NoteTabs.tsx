@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { X, Pencil } from "lucide-react";
+import { X, Pencil, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui-elements/atoms/Button";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
@@ -20,11 +20,12 @@ interface NoteTabsProps {
   tabs: Tab[];
   activeTabId: string;
   onTabSelect: (tabId: string) => void;
-  onTabClose: (tabId: string) => void;
+  onTabClose?: (tabId: string) => void;
   onTabRename?: (tabId: string, newTitle: string) => void;
+  onAddPage?: () => void;
 }
 
-export const NoteTabs = ({ tabs, activeTabId, onTabSelect, onTabClose, onTabRename }: NoteTabsProps) => {
+export const NoteTabs = ({ tabs, activeTabId, onTabSelect, onTabClose, onTabRename, onAddPage }: NoteTabsProps) => {
   const [editingTabId, setEditingTabId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -58,7 +59,7 @@ export const NoteTabs = ({ tabs, activeTabId, onTabSelect, onTabClose, onTabRena
 
   return (
     <ScrollArea className="w-full border-b border-border bg-card/50 backdrop-blur-sm">
-      <div className="flex items-center gap-1 px-2 py-1">
+      <div className="flex items-center gap-1 px-2 py-0">
         {tabs.map((tab) => (
           <ContextMenu key={tab.id}>
             <ContextMenuTrigger asChild>
@@ -89,17 +90,19 @@ export const NoteTabs = ({ tabs, activeTabId, onTabSelect, onTabClose, onTabRena
                     {tab.title}
                   </span>
                 )}
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="w-4 h-4 p-0 opacity-0 group-hover:opacity-100 transition-all duration-200 hover:bg-destructive/10 hover:text-destructive"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onTabClose(tab.id);
-                  }}
-                >
-                  <X className="w-3 h-3" />
-                </Button>
+                {onTabClose && (
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="w-4 h-4 p-0 opacity-0 group-hover:opacity-100 transition-all duration-200 hover:bg-destructive/10 hover:text-destructive"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onTabClose(tab.id);
+                    }}
+                  >
+                    <X className="w-3 h-3" />
+                  </Button>
+                )}
               </div>
             </ContextMenuTrigger>
             <ContextMenuContent className="w-40">
@@ -113,6 +116,19 @@ export const NoteTabs = ({ tabs, activeTabId, onTabSelect, onTabClose, onTabRena
             </ContextMenuContent>
           </ContextMenu>
         ))}
+
+        {onAddPage && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="ml-1 text-muted-foreground hover:text-foreground hover:bg-muted flex-shrink-0 gap-1"
+            onClick={onAddPage}
+            title="Add page"
+          >
+            <Plus className="w-3 h-3" />
+            Add page
+          </Button>
+        )}
       </div>
       <ScrollBar orientation="horizontal" />
     </ScrollArea>

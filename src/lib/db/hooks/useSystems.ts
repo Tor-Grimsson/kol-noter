@@ -108,8 +108,8 @@ export function useSystems() {
     queryFn: async (): Promise<System[]> => {
       if (!vaultPath) return [];
       const db = await getDb(vaultPath);
-      const systemRows = await db.select<SystemRow[]>('SELECT * FROM systems');
-      const projectRows = await db.select<ProjectRow[]>('SELECT * FROM projects');
+      const systemRows = await db.select<SystemRow[]>('SELECT * FROM systems ORDER BY created_at ASC');
+      const projectRows = await db.select<ProjectRow[]>('SELECT * FROM projects ORDER BY created_at ASC');
       return systemRows.map(r => rowToSystem(r, projectRows));
     },
     enabled: !!vaultPath,

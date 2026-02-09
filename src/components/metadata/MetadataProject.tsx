@@ -18,6 +18,7 @@ export const MetadataProject = ({ systemId, projectId, onClose }: MetadataProjec
   const {
     getProject,
     updateProjectMetadata,
+    updateProjectMetrics,
     deleteProject,
     addProjectPhoto,
     removeProjectPhoto,
@@ -101,7 +102,7 @@ export const MetadataProject = ({ systemId, projectId, onClose }: MetadataProjec
             <SectionMetrics
               metrics={project.metrics}
               stats={stats}
-              onUpdateMetrics={(metrics) => updateProjectMetadata(systemId, projectId, { metrics } as any)}
+              onUpdateMetrics={(metrics) => updateProjectMetrics(systemId, projectId, metrics)}
               isBottomPanel
             />
           </div>

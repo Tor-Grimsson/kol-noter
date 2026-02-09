@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from "react";
-import { MoreHorizontal, Plus, User, Target as TargetIcon, Calendar as CalendarIcon, ChevronDown, GripVertical, X, Folder, ChevronLeft, ChevronRight, ArrowDown, ArrowRight } from "lucide-react";
+import { MoreHorizontal, Plus, User, Network, Calendar as CalendarIcon, ChevronDown, GripVertical, X, Folder, ChevronLeft, ChevronRight, ArrowDown, ArrowRight, Star, Heart, Code, Book, Briefcase, Home, Music, FileText } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui-elements/atoms/Button";
+import { LabeledInput } from "@/components/ui-elements/atoms/LabeledInput";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,11 +11,14 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import { format } from "date-fns";
 import { useNotesStore } from "@/store/NotesContext";
 import { useLocalStorage } from "@/hooks/useLocalStorage";
 import { MetadataSystem } from "@/components/metadata/MetadataSystem";
 import { MetadataProject } from "@/components/metadata/MetadataProject";
+import { DropdownSelect } from "@/components/ui-elements/molecules/DropdownSelect";
 
 interface OverviewSystemProps {
   systemId: string;
@@ -32,9 +35,32 @@ interface Column {
   width: number;
 }
 
+const healthMap: Record<string, string> = { "Good": "good", "Warning": "warning", "Critical": "critical" };
+const priorityMap: Record<string, string> = { "High": "high", "Medium": "medium", "Low": "low" };
+const statusMap: Record<string, string> = { "Not Started": "not_started", "In Progress": "in_progress", "Done": "done", "Blocked": "blocked" };
+const reverseHealthMap: Record<string, string> = Object.fromEntries(Object.entries(healthMap).map(([k, v]) => [v, k]));
+const reversePriorityMap: Record<string, string> = Object.fromEntries(Object.entries(priorityMap).map(([k, v]) => [v, k]));
+const reverseStatusMap: Record<string, string> = Object.fromEntries(Object.entries(statusMap).map(([k, v]) => [v, k]));
+
+const getIcon = (iconName?: string | null, className?: string, color?: string) => {
+  const style = color ? { color } : undefined;
+  switch (iconName) {
+    case "star": return <Star className={className} style={style} />;
+    case "heart": return <Heart className={className} style={style} />;
+    case "code": return <Code className={className} style={style} />;
+    case "book": return <Book className={className} style={style} />;
+    case "briefcase": return <Briefcase className={className} style={style} />;
+    case "home": return <Home className={className} style={style} />;
+    case "music": return <Music className={className} style={style} />;
+    case "folder": return <Folder className={className} style={style} />;
+    case "file": return <FileText className={className} style={style} />;
+    default: return <Network className={className} style={style} />;
+  }
+};
+
 export const OverviewSystem = ({ systemId, onProjectSelect, onRootSelect, onClose }: OverviewSystemProps) => {
   const {
-    getSystem, getProject, addProject,
+    getSystem, getProject, addProject, updateProjectMetrics,
   } = useNotesStore();
   const system = getSystem(systemId);
 
@@ -132,24 +158,6 @@ export const OverviewSystem = ({ systemId, onProjectSelect, onRootSelect, onClos
     );
   }
 
-  const getHealthColor = (health?: "good" | "warning" | "critical") => {
-    switch (health) {
-      case "good": return "text-success";
-      case "warning": return "text-warning";
-      case "critical": return "text-destructive";
-      default: return "text-muted-foreground";
-    }
-  };
-
-  const getPriorityBadge = (priority?: "low" | "medium" | "high") => {
-    const variants = {
-      low: "bg-muted text-muted-foreground",
-      medium: "bg-warning/20 text-warning",
-      high: "bg-destructive/20 text-destructive",
-    };
-    return priority ? variants[priority] : "bg-muted text-muted-foreground";
-  };
-
   const handleResizeStart = (columnId: ColumnId, e: React.MouseEvent) => {
     e.preventDefault();
     setResizingColumn(columnId);
@@ -180,77 +188,75 @@ export const OverviewSystem = ({ systemId, onProjectSelect, onRootSelect, onClos
       case "name":
         return (
           <div className="flex items-center gap-2">
-            <TargetIcon
-              className="w-3 h-3 text-muted-foreground cursor-pointer hover:text-foreground transition-colors"
-              onClick={(e) => {
-                e.stopPropagation();
-                onProjectSelect?.(project.id);
-              }}
-            />
-            <span className="text-xs font-medium text-foreground">{project.name}</span>
+            <button
+              onClick={(e) => { e.stopPropagation(); onProjectSelect?.(project.id); }}
+              className="hover:opacity-80 transition-opacity"
+            >
+              {getIcon(project.icon, "w-3 h-3 shrink-0", project.color)}
+            </button>
+            <span className="text-xs font-medium" style={{ color: project.color }}>{project.name}</span>
           </div>
         );
       case "health":
         return (
-          <div className="flex items-center gap-2">
-            <div className={cn("w-1.5 h-1.5 rounded-full", getHealthColor(project.metrics?.health))}
-                 style={{ backgroundColor: project.metrics?.health ? undefined : 'currentColor' }} />
-            <span className="text-xs text-muted-foreground">
-              {project.metrics?.health === "good" && "On track"}
-              {project.metrics?.health === "warning" && "No updates"}
-              {project.metrics?.health === "critical" && "At risk"}
-              {!project.metrics?.health && "No updates"}
-            </span>
-          </div>
+          <DropdownSelect
+            variant="table"
+            value={project.metrics?.health ? reverseHealthMap[project.metrics.health] : undefined}
+            options={["Good", "Warning", "Critical"]}
+            placeholder="—"
+            onChange={(val) => updateProjectMetrics(systemId, project.id, { health: healthMap[val] as "good" | "warning" | "critical" })}
+          />
         );
       case "priority":
-        return project.metrics?.priority ? (
-          <Badge className={cn("text-[10px] px-1.5 py-0", getPriorityBadge(project.metrics.priority))}>
-            {project.metrics.priority}
-          </Badge>
-        ) : (
-          <span className="text-xs text-muted-foreground">-</span>
+        return (
+          <DropdownSelect
+            variant="table"
+            value={project.metrics?.priority ? reversePriorityMap[project.metrics.priority] : undefined}
+            options={["High", "Medium", "Low"]}
+            placeholder="—"
+            onChange={(val) => updateProjectMetrics(systemId, project.id, { priority: priorityMap[val] as "high" | "medium" | "low" })}
+          />
         );
       case "lead":
-        return project.metrics?.lead ? (
-          <div className="flex items-center gap-2">
-            <div className="w-5 h-5 rounded-full bg-accent flex items-center justify-center">
-              <span className="text-[10px] font-medium text-accent-foreground">
-                {project.metrics.lead.split(" ").map(n => n[0]).join("")}
-              </span>
-            </div>
-            <span className="text-xs text-foreground">{project.metrics.lead}</span>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2 text-muted-foreground">
-            <User className="w-3 h-3" />
-            <span className="text-xs">No lead</span>
-          </div>
+        return (
+          <LabeledInput
+            variant="table"
+            label="Lead"
+            value={project.metrics?.lead || ""}
+            onChange={(val) => updateProjectMetrics(systemId, project.id, { lead: val || undefined })}
+          />
         );
       case "targetDate":
-        return project.metrics?.targetDate ? (
-          <div className="flex items-center gap-2">
-            <CalendarIcon className="w-3 h-3 text-muted-foreground" />
-            <span className="text-xs text-foreground">{project.metrics.targetDate}</span>
-          </div>
-        ) : (
-          <span className="text-xs text-muted-foreground">-</span>
+        return (
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-1 text-xs justify-start hover:bg-transparent"
+              >
+                {project.metrics?.targetDate ? format(new Date(project.metrics.targetDate), "MMM d, yyyy") : "—"}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="start">
+              <Calendar
+                mode="single"
+                selected={project.metrics?.targetDate ? new Date(project.metrics.targetDate) : undefined}
+                onSelect={(date) => updateProjectMetrics(systemId, project.id, { targetDate: date?.toISOString() || undefined })}
+                initialFocus
+              />
+            </PopoverContent>
+          </Popover>
         );
       case "status":
-        const statusPercent = project.metrics?.status === 'done' ? 100
-          : project.metrics?.status === 'in_progress' ? 45
-          : project.metrics?.status === 'blocked' ? 25
-          : 0;
         return (
-          <div className="flex items-center gap-2">
-            <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden max-w-[80px]">
-              <div
-                className="h-full bg-primary transition-all"
-                style={{ width: `${statusPercent}%` }}
-              />
-            </div>
-            <span className="text-[10px] text-muted-foreground min-w-[28px]">{statusPercent}%</span>
-          </div>
+          <DropdownSelect
+            variant="table"
+            value={project.metrics?.status ? reverseStatusMap[project.metrics.status] : undefined}
+            options={["Not Started", "In Progress", "Done", "Blocked"]}
+            placeholder="—"
+            onChange={(val) => updateProjectMetrics(systemId, project.id, { status: statusMap[val] as "not_started" | "in_progress" | "done" | "blocked" })}
+          />
         );
     }
   };
@@ -393,7 +399,7 @@ export const OverviewSystem = ({ systemId, onProjectSelect, onRootSelect, onClos
           </div>
         </div>
       ) : (
-        <div className="flex-1 overflow-auto">
+        <div className="flex-1 overflow-auto" onClick={() => setSelectedRowId(null)}>
           <table className="w-full">
             <thead className="sticky top-0 bg-background border-b border-border z-10">
               <tr>
@@ -424,10 +430,10 @@ export const OverviewSystem = ({ systemId, onProjectSelect, onRootSelect, onClos
                 <tr
                   key={project.id}
                   className={cn(
-                    "border-b border-border hover:bg-muted/50 transition-colors cursor-pointer",
+                    "border-b border-border transition-colors cursor-pointer",
                     selectedRowId === project.id && "bg-primary/10 border-l-2 border-l-primary"
                   )}
-                  onClick={() => handleRowClick(project.id)}
+                  onClick={(e) => { e.stopPropagation(); handleRowClick(project.id); }}
                   onDoubleClick={() => handleRowDoubleClick(project.id)}
                 >
                   {columns.map(column => (
@@ -487,9 +493,12 @@ export const OverviewSystem = ({ systemId, onProjectSelect, onRootSelect, onClos
               </div>
 
               <div className="flex items-center gap-2">
-                <Input
-                  placeholder="Filter..."
-                  className="pl-3 bg-input border-input-border h-8 w-48 text-xs"
+                <LabeledInput
+                  label="Filter..."
+                  value=""
+                  onChange={() => {}}
+                  variant="filter"
+                  className="w-48"
                 />
                 <Button size="sm" className="gap-2 bg-primary hover:bg-primary-hover text-primary-foreground text-xs h-8" onClick={handleAddProject}>
                   <Plus className="w-3 h-3" />
@@ -589,9 +598,12 @@ export const OverviewSystem = ({ systemId, onProjectSelect, onRootSelect, onClos
               </div>
 
               <div className="flex items-center gap-2">
-                <Input
-                  placeholder="Filter..."
-                  className="pl-3 bg-input border-input-border h-8 w-48 text-xs"
+                <LabeledInput
+                  label="Filter..."
+                  value=""
+                  onChange={() => {}}
+                  variant="filter"
+                  className="w-48"
                 />
                 <Button size="sm" className="gap-2 bg-primary hover:bg-primary-hover text-primary-foreground text-xs h-8" onClick={handleAddProject}>
                   <Plus className="w-3 h-3" />

@@ -7,7 +7,7 @@
  */
 
 import Database from '@tauri-apps/plugin-sql';
-import { CREATE_TABLES_SQL, SCHEMA_VERSION } from './schema';
+import { CREATE_TABLES_SQL, SCHEMA_VERSION, MIGRATION_V2_SQL } from './schema';
 
 let dbInstance: Database | null = null;
 let currentDbPath: string | null = null;
@@ -47,6 +47,25 @@ export async function getDb(vaultPath: string): Promise<Database> {
 
   for (const stmt of statements) {
     await db.execute(stmt);
+  }
+
+  // Run migrations
+  try {
+    const versionRows = await db.select<{ value: string }[]>(
+      `SELECT value FROM _meta WHERE key='schema_version'`
+    );
+    const currentVersion = versionRows.length > 0 ? parseInt(versionRows[0].value, 10) : 0;
+
+    if (currentVersion < 2) {
+      // v1 → v2: add pages_json column
+      try {
+        await db.execute(MIGRATION_V2_SQL.trim());
+      } catch {
+        // Column may already exist (e.g. fresh DB created with v2 schema)
+      }
+    }
+  } catch {
+    // _meta table may not exist yet on fresh DB — migrations not needed
   }
 
   // Store schema version

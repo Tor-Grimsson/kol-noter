@@ -6,7 +6,7 @@
  * can read them back with a simple SELECT.
  */
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export const CREATE_TABLES_SQL = `
 CREATE TABLE IF NOT EXISTS _meta (
@@ -86,6 +86,7 @@ CREATE TABLE IF NOT EXISTS notes (
   voice_recordings_json TEXT NOT NULL DEFAULT '[]',
   links_json      TEXT NOT NULL DEFAULT '[]',
   contacts_json   TEXT NOT NULL DEFAULT '[]',
+  pages_json      TEXT NOT NULL DEFAULT '[]',
   metrics_json    TEXT,
   created_at      INTEGER NOT NULL,
   updated_at      INTEGER NOT NULL
@@ -108,4 +109,12 @@ CREATE TABLE IF NOT EXISTS entity_tags (
 );
 
 CREATE INDEX IF NOT EXISTS idx_tags_tag ON entity_tags(tag);
+`;
+
+/**
+ * Migration SQL for schema version 1 → 2.
+ * Adds the pages_json column to the notes table.
+ */
+export const MIGRATION_V2_SQL = `
+ALTER TABLE notes ADD COLUMN pages_json TEXT NOT NULL DEFAULT '[]';
 `;

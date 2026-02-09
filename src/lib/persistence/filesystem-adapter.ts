@@ -5,7 +5,7 @@
  * Creates an Obsidian-compatible vault structure.
  */
 
-import type { System, Note, Project, Block, VisualNode } from '@/store/NotesContext';
+import type { System, Note, Page, Project, Block, VisualNode } from '@/store/NotesContext';
 import type {
   IPersistenceAdapter,
   VaultData,
@@ -39,6 +39,8 @@ import {
 } from '@/lib/tauri-bridge';
 import {
   NoteSerializer,
+  NoteMetadataSerializer,
+  PageSerializer,
   SystemSerializer,
   ProjectSerializer,
   generateSlug,
@@ -284,47 +286,103 @@ export class FilesystemAdapter implements IPersistenceAdapter {
     const entries = await readDirectory(dirPath, false);
 
     for (const entry of entries) {
-      // Skip directories, hidden files, metadata files, and sidecar files
+      // Notes are subdirectories; skip files, hidden dirs, metadata dirs
       if (
-        entry.isDirectory ||
+        !entry.isDirectory ||
         entry.name.startsWith('.') ||
-        entry.name.startsWith('_') ||
-        entry.name.endsWith(FILE_PATTERNS.VISUAL_SIDECAR_SUFFIX)
+        entry.name.startsWith('_')
       ) {
         continue;
       }
 
-      // Only process .md files
-      if (!entry.name.endsWith('.md')) {
+      const noteMetaPath = joinPath(entry.path, FILE_PATTERNS.NOTE_METADATA);
+
+      // Must have _note.md to be a note folder
+      if (!(await pathExists(noteMetaPath))) {
         continue;
       }
 
       try {
-        const content = await readFile(entry.path);
+        // 1. Read _note.md → note metadata
+        const metaContent = await readFile(noteMetaPath);
+        const noteMeta = NoteMetadataSerializer.deserialize(metaContent);
 
-        // Check for visual sidecar
-        const basePath = removeExtension(entry.path);
-        const sidecarPath = basePath + FILE_PATTERNS.VISUAL_SIDECAR_SUFFIX;
-        let visualData: VisualNode[] | undefined;
+        // 2. Read page .md files (everything except _note.md and _-prefixed)
+        const noteEntries = await readDirectory(entry.path, false);
+        const pages: Page[] = [];
 
-        if (await pathExists(sidecarPath)) {
-          const sidecarContent = await readFile(sidecarPath);
-          visualData = JSON.parse(sidecarContent);
+        for (const pageEntry of noteEntries) {
+          if (
+            pageEntry.isDirectory ||
+            pageEntry.name.startsWith('.') ||
+            pageEntry.name.startsWith('_') ||
+            pageEntry.name.endsWith(FILE_PATTERNS.VISUAL_SIDECAR_SUFFIX) ||
+            !pageEntry.name.endsWith('.md')
+          ) {
+            continue;
+          }
+
+          try {
+            const pageContent = await readFile(pageEntry.path);
+            const pageSlug = removeExtension(pageEntry.name);
+
+            // Check for visual sidecar
+            const pageSidecarPath = removeExtension(pageEntry.path) + FILE_PATTERNS.VISUAL_SIDECAR_SUFFIX;
+            let visualData: VisualNode[] | undefined;
+            if (await pathExists(pageSidecarPath)) {
+              const sidecarContent = await readFile(pageSidecarPath);
+              visualData = JSON.parse(sidecarContent);
+            }
+
+            const page = PageSerializer.deserialize(
+              pageContent,
+              noteMeta.id!,
+              pageSlug,
+              visualData,
+            );
+            pages.push(page);
+          } catch (e) {
+            console.error(`Failed to load page from ${pageEntry.path}:`, e);
+          }
         }
 
-        const note = NoteSerializer.deserialize(content, visualData, removeExtension(entry.name));
-        note.systemId = systemId;
-        note.projectId = projectId;
+        // 3. Sort pages by order
+        pages.sort((a, b) => a.order - b.order);
 
-        // Update ID map
+        // 4. Build the Note object
+        const indexPage = pages.find(p => p.slug === 'index') || pages[0];
+
+        const note: Note = {
+          id: noteMeta.id!,
+          title: noteMeta.title || (indexPage?.title) || entry.name,
+          preview: indexPage?.preview || '',
+          date: 'Just now',
+          tags: noteMeta.tags || [],
+          tagColors: noteMeta.tagColors,
+          favorite: noteMeta.favorite,
+          color: noteMeta.color,
+          icon: noteMeta.icon,
+          customType: noteMeta.customType,
+          systemId,
+          projectId,
+          pages,
+          // Deprecated fields — populated from index page for backward compat
+          editorType: indexPage?.editorType || 'standard',
+          content: indexPage?.content || '',
+          createdAt: noteMeta.createdAt!,
+          updatedAt: noteMeta.updatedAt!,
+        };
+
+        if (noteMeta.metrics) note.metrics = noteMeta.metrics;
+        if (noteMeta.photos) note.photos = noteMeta.photos;
+        if (noteMeta.attachments) note.attachments = noteMeta.attachments;
+
+        // Update ID map — note path is the folder, not a file
         const relativePath = entry.path.replace(this.vaultPath + '/', '');
         this.idMap.notes[note.id] = relativePath;
 
-        // Scan _assets directory — discover files not already listed in frontmatter.
-        // Photos and files from frontmatter are already populated by the deserializer.
-        // Images are resolved at render time via convertFileSrc (asset protocol).
-        const noteDir = getDirname(entry.path);
-        const assetsDir = joinPath(noteDir, FILE_PATTERNS.ASSETS_DIR);
+        // 5. Scan _assets directory — discover files not already listed
+        const assetsDir = joinPath(entry.path, FILE_PATTERNS.ASSETS_DIR);
         if (await pathExists(assetsDir)) {
           try {
             const assetEntries = await readDirectory(assetsDir, false);
@@ -332,7 +390,6 @@ export class FilesystemAdapter implements IPersistenceAdapter {
               .filter(a => !a.isDirectory && !a.name.startsWith('.'))
               .map(a => a.name);
 
-            // Build set of filenames already known from frontmatter
             const knownFiles = new Set<string>();
             if (note.photos) {
               for (const p of note.photos) knownFiles.add(p.name);
@@ -341,7 +398,6 @@ export class FilesystemAdapter implements IPersistenceAdapter {
               for (const f of Object.keys(note.attachments)) knownFiles.add(f);
             }
 
-            // Merge unknown files into attachments as fallback
             const unknownFiles = filenames.filter(f => !knownFiles.has(f));
             if (unknownFiles.length > 0) {
               if (!note.attachments) note.attachments = {};
@@ -528,38 +584,89 @@ export class FilesystemAdapter implements IPersistenceAdapter {
 
     const projectFullPath = joinPath(this.vaultPath, projectPath);
 
-    // Determine file name
-    let existingPath = this.idMap.notes[note.id];
-    let filename: string;
+    // Determine note folder name
+    let existingRelPath = this.idMap.notes[note.id];
+    let noteFolderName: string;
 
-    if (existingPath) {
-      filename = getFilename(existingPath);
+    if (existingRelPath) {
+      // Existing note — folder name is the last segment of the relative path
+      noteFolderName = existingRelPath.split('/').pop()!;
     } else {
-      // New note - generate filename
+      // New note — generate folder name
       const existingEntries = await readDirectory(projectFullPath, false);
-      const existingFiles = existingEntries
-        .filter(e => e.isFile && e.name.endsWith('.md') && !e.name.startsWith('_'))
-        .map(e => removeExtension(e.name));
+      const existingFolders = existingEntries
+        .filter(e => e.isDirectory && !e.name.startsWith('.') && !e.name.startsWith('_'))
+        .map(e => e.name);
 
-      const slug = await ensureUniqueSlug(
+      noteFolderName = await ensureUniqueSlug(
         generateSlug(note.title || 'untitled'),
-        existingFiles
+        existingFolders
       );
-      filename = slug + '.md';
-      this.idMap.notes[note.id] = `${projectPath}/${filename}`;
+      this.idMap.notes[note.id] = `${projectPath}/${noteFolderName}`;
     }
 
-    const notePath = joinPath(projectFullPath, filename);
+    const noteFolderPath = joinPath(projectFullPath, noteFolderName);
 
-    // Serialize based on editor type
-    const { markdown, visualData } = NoteSerializer.serialize(note);
+    // Create note folder if it doesn't exist
+    if (!(await pathExists(noteFolderPath))) {
+      await createDirectory(noteFolderPath);
+    }
 
-    await writeFile(notePath, markdown);
+    // 1. Write _note.md via NoteMetadataSerializer
+    const noteMetaMd = NoteMetadataSerializer.serialize(note);
+    await writeFile(joinPath(noteFolderPath, FILE_PATTERNS.NOTE_METADATA), noteMetaMd);
 
-    // Handle visual sidecar
-    if (visualData) {
-      const sidecarPath = removeExtension(notePath) + FILE_PATTERNS.VISUAL_SIDECAR_SUFFIX;
-      await writeFile(sidecarPath, JSON.stringify(visualData, null, 2));
+    // 2. Ensure pages exist — if empty, create a default index page from legacy fields
+    const pages: Page[] = (note.pages && note.pages.length > 0)
+      ? note.pages
+      : [{
+          id: `${note.id}-index`,
+          noteId: note.id,
+          slug: 'index',
+          title: note.title,
+          preview: note.preview || '',
+          order: 0,
+          editorType: note.editorType,
+          content: note.content,
+          createdAt: note.createdAt,
+          updatedAt: note.updatedAt,
+        }];
+
+    // 3. Write each page as {slug}.md via PageSerializer
+    const writtenSlugs = new Set<string>();
+    for (const page of pages) {
+      const { markdown, visualData } = PageSerializer.serialize(page, note.title);
+      const pageFilePath = joinPath(noteFolderPath, `${page.slug}.md`);
+      await writeFile(pageFilePath, markdown);
+      writtenSlugs.add(page.slug);
+
+      // Write .visual.json sidecar for visual pages
+      if (visualData) {
+        const sidecarPath = joinPath(noteFolderPath, `${page.slug}${FILE_PATTERNS.VISUAL_SIDECAR_SUFFIX}`);
+        await writeFile(sidecarPath, JSON.stringify(visualData, null, 2));
+      }
+    }
+
+    // 4. Delete orphaned .md files (pages that were removed)
+    const noteEntries = await readDirectory(noteFolderPath, false);
+    for (const entry of noteEntries) {
+      if (
+        entry.isDirectory ||
+        entry.name.startsWith('.') ||
+        entry.name.startsWith('_') ||
+        !entry.name.endsWith('.md')
+      ) {
+        continue;
+      }
+      const slug = removeExtension(entry.name);
+      if (!writtenSlugs.has(slug)) {
+        await removePath(entry.path);
+        // Also remove visual sidecar if present
+        const orphanSidecar = removeExtension(entry.path) + FILE_PATTERNS.VISUAL_SIDECAR_SUFFIX;
+        if (await pathExists(orphanSidecar)) {
+          await removePath(orphanSidecar);
+        }
+      }
     }
 
     await this.saveIdMap();
@@ -573,36 +680,41 @@ export class FilesystemAdapter implements IPersistenceAdapter {
 
     const fullPath = joinPath(this.vaultPath, notePath);
 
-    // Read the note first to save to trash
+    // Read the note folder to save to trash as JSON snapshot
     if (await pathExists(fullPath)) {
       try {
-        const content = await readFile(fullPath);
+        // Reload the note from disk so the trash snapshot is complete
+        const parts = notePath.split('/');
+        const systemFolder = parts[0];
+        const systemId = Object.entries(this.idMap.systems).find(
+          ([, path]) => path === systemFolder
+        )?.[0] || '';
+        const projectFolder = `${parts[0]}/${parts[1]}`;
+        const projectId = Object.entries(this.idMap.projects).find(
+          ([, path]) => path === projectFolder
+        )?.[0] || '';
 
-        // Check for visual sidecar
-        const basePath = removeExtension(fullPath);
-        const sidecarPath = basePath + FILE_PATTERNS.VISUAL_SIDECAR_SUFFIX;
-        let visualData: VisualNode[] | undefined;
-
-        if (await pathExists(sidecarPath)) {
-          const sidecarContent = await readFile(sidecarPath);
-          visualData = JSON.parse(sidecarContent);
-          await removePath(sidecarPath);
-        }
-
-        const note = NoteSerializer.deserialize(content, visualData);
-
-        // Save to trash
-        const trashPath = joinPath(this.vaultPath, VAULT_CONFIG_DIR, 'trash');
-        await createDirectory(trashPath);
-        await writeFile(
-          joinPath(trashPath, `${noteId}.json`),
-          JSON.stringify(note, null, 2)
+        const loadedNotes = await this.loadNotesFromDirectory(
+          getDirname(fullPath),
+          systemId,
+          projectId
         );
+        const note = loadedNotes.find(n => n.id === noteId);
+
+        if (note) {
+          const trashPath = joinPath(this.vaultPath, VAULT_CONFIG_DIR, 'trash');
+          await createDirectory(trashPath);
+          await writeFile(
+            joinPath(trashPath, `${noteId}.json`),
+            JSON.stringify(note, null, 2)
+          );
+        }
       } catch (e) {
         console.error('Failed to backup note to trash:', e);
       }
 
-      await removePath(fullPath);
+      // Remove the entire note folder
+      await removePath(fullPath, true);
     }
 
     // Clean up ID map
@@ -650,8 +762,8 @@ export class FilesystemAdapter implements IPersistenceAdapter {
       throw new Error(`Note ${noteId} not found`);
     }
 
-    const noteDir = getDirname(joinPath(this.vaultPath, notePath));
-    const assetsDir = joinPath(noteDir, FILE_PATTERNS.ASSETS_DIR);
+    // notePath is now a folder path (not a file), so _assets is a direct child
+    const assetsDir = joinPath(this.vaultPath, notePath, FILE_PATTERNS.ASSETS_DIR);
 
     // Create assets directory if needed
     if (!(await pathExists(assetsDir))) {
@@ -690,8 +802,7 @@ export class FilesystemAdapter implements IPersistenceAdapter {
       return;
     }
 
-    const noteDir = getDirname(joinPath(this.vaultPath, notePath));
-    const filePath = joinPath(noteDir, FILE_PATTERNS.ASSETS_DIR, filename);
+    const filePath = joinPath(this.vaultPath, notePath, FILE_PATTERNS.ASSETS_DIR, filename);
 
     if (await pathExists(filePath)) {
       await removePath(filePath);
@@ -704,8 +815,7 @@ export class FilesystemAdapter implements IPersistenceAdapter {
       throw new Error(`Note ${noteId} not found`);
     }
 
-    const noteDir = getDirname(joinPath(this.vaultPath, notePath));
-    const filePath = joinPath(noteDir, FILE_PATTERNS.ASSETS_DIR, filename);
+    const filePath = joinPath(this.vaultPath, notePath, FILE_PATTERNS.ASSETS_DIR, filename);
 
     // Determine MIME type from extension
     const ext = filename.split('.').pop()?.toLowerCase() || '';
@@ -732,24 +842,28 @@ export class FilesystemAdapter implements IPersistenceAdapter {
       return 0;
     }
 
-    const noteFullPath = joinPath(this.vaultPath, notePath);
-
-    // Get note file size
+    const noteFolderPath = joinPath(this.vaultPath, notePath);
     let totalSize = 0;
-    if (await pathExists(noteFullPath)) {
-      totalSize = await getFileSize(noteFullPath);
+
+    if (!(await pathExists(noteFolderPath))) {
+      return 0;
+    }
+
+    // Sum all files in the note folder (pages, _note.md, sidecars)
+    const entries = await readDirectory(noteFolderPath, false);
+    for (const entry of entries) {
+      if (entry.isFile) {
+        totalSize += await getFileSize(entry.path);
+      }
     }
 
     // Sum _assets folder size
-    const noteDir = getDirname(noteFullPath);
-    const assetsDir = joinPath(noteDir, FILE_PATTERNS.ASSETS_DIR);
-
+    const assetsDir = joinPath(noteFolderPath, FILE_PATTERNS.ASSETS_DIR);
     if (await pathExists(assetsDir)) {
-      const entries = await readDirectory(assetsDir, false);
-      for (const entry of entries) {
+      const assetEntries = await readDirectory(assetsDir, false);
+      for (const entry of assetEntries) {
         if (entry.isFile) {
-          const filePath = joinPath(assetsDir, entry.name);
-          totalSize += await getFileSize(filePath);
+          totalSize += await getFileSize(entry.path);
         }
       }
     }
@@ -834,39 +948,30 @@ export class FilesystemAdapter implements IPersistenceAdapter {
   }
 
   /**
-   * Rename a note file on disk (and its visual sidecar if present).
+   * Rename a note folder on disk and update idMap paths.
    */
   async renameNote(noteId: string, newTitle: string): Promise<void> {
     const oldRelPath = this.idMap.notes[noteId];
     if (!oldRelPath) return;
 
-    const dir = getDirname(oldRelPath);
-    const oldFilename = getFilename(oldRelPath);
-    const oldSlug = removeExtension(oldFilename);
+    const parentDir = getDirname(oldRelPath);
+    const oldFolderName = oldRelPath.split('/').pop()!;
 
-    // Get existing sibling note files for uniqueness check
-    const siblingFiles = Object.values(this.idMap.notes)
-      .filter(p => getDirname(p) === dir && p !== oldRelPath)
-      .map(p => removeExtension(getFilename(p)));
+    // Get existing sibling note folders for uniqueness check
+    const siblingFolders = Object.values(this.idMap.notes)
+      .filter(p => getDirname(p) === parentDir && p !== oldRelPath)
+      .map(p => p.split('/').pop()!);
 
-    const newSlug = await ensureUniqueSlug(generateSlug(newTitle || 'untitled'), siblingFiles);
+    const newFolderName = await ensureUniqueSlug(generateSlug(newTitle || 'untitled'), siblingFolders);
 
-    if (newSlug === oldSlug) return;
+    if (newFolderName === oldFolderName) return;
 
-    const newFilename = newSlug + '.md';
-    const newRelPath = dir ? `${dir}/${newFilename}` : newFilename;
+    const newRelPath = parentDir ? `${parentDir}/${newFolderName}` : newFolderName;
 
-    // Rename .md file
+    // Rename the folder
     const oldFullPath = joinPath(this.vaultPath, oldRelPath);
     const newFullPath = joinPath(this.vaultPath, newRelPath);
     await renamePath(oldFullPath, newFullPath);
-
-    // Rename visual sidecar if it exists
-    const oldSidecarPath = removeExtension(oldFullPath) + FILE_PATTERNS.VISUAL_SIDECAR_SUFFIX;
-    if (await pathExists(oldSidecarPath)) {
-      const newSidecarPath = removeExtension(newFullPath) + FILE_PATTERNS.VISUAL_SIDECAR_SUFFIX;
-      await renamePath(oldSidecarPath, newSidecarPath);
-    }
 
     // Update idMap
     this.idMap.notes[noteId] = newRelPath;

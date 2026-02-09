@@ -7,13 +7,13 @@ import { MetadataNote } from "@/components/metadata/MetadataNote";
 import { OverviewRoot, OverviewSystem, OverviewProject } from "@/components/overviews";
 import { Button } from "@/components/ui-elements/atoms/Button";
 import { Eye, Moon, Folder, FolderX } from "lucide-react";
-import { useNotesStore, Block, VisualNode, EditorType } from "@/store/NotesContext";
+import { useNotesStore, Block, VisualNode, EditorType, Page } from "@/store/NotesContext";
 import { useVault } from "@/components/vault-system/VaultProvider";
 import { getNoteAssetBasePath } from "@/lib/persistence/asset-resolver";
 import { filesystemAdapter } from "@/lib/persistence/filesystem-adapter";
 
 const Index = () => {
-  const { systems, notes, getNote, updateNoteContent, updateNote, addNote, deleteNote, saveAttachment, addNotePhoto, notesRef, isLoading } = useNotesStore();
+  const { systems, notes, getNote, updateNoteContent, updateNote, addNote, addPage, deleteNote, saveAttachment, addNotePhoto, notesRef, isLoading } = useNotesStore();
   const { isFilesystem, vaultPath } = useVault();
 
   const [selectedNoteId, setSelectedNoteId] = useState<string | undefined>(undefined);
@@ -31,6 +31,7 @@ const Index = () => {
 
   const [openTabs, setOpenTabs] = useState<{ id: string; title: string; type: EditorType }[]>([]);
   const [activeTabId, setActiveTabId] = useState("");
+  const [activePageId, setActivePageId] = useState<string | undefined>(undefined);
 
   // Sync tab titles with store notes when notes change
   useEffect(() => {
@@ -71,6 +72,10 @@ const Index = () => {
     const note = getNote(noteId);
     const title = note?.title || `Note ${noteId}`;
     const noteType = note?.editorType || type;
+
+    // Set the active page to the first page (index page) of the note
+    const firstPage = note?.pages?.[0];
+    setActivePageId(firstPage?.id);
 
     if (!openTabs.find(tab => tab.id === noteId)) {
       setOpenTabs([...openTabs, { id: noteId, title, type: noteType }]);
@@ -161,38 +166,46 @@ const Index = () => {
       );
     }
 
-    if (openTabs.length === 0) {
+    if (!activeTabId) {
       return <EmptyState title="No note open" description="Select a note from the sidebar or create a new one." />;
     }
 
-    const activeTab = openTabs.find(tab => tab.id === activeTabId);
-    const currentEditorType = activeTab?.type || editorType;
     const currentNote = getNote(activeTabId);
+    if (!currentNote) {
+      return <EmptyState title="No note open" description="Select a note from the sidebar or create a new one." />;
+    }
+
+    // Resolve the active page's content and editor type
+    const activePage = activePageId
+      ? currentNote.pages?.find(p => p.id === activePageId)
+      : currentNote.pages?.[0];
+
+    const activeContent = activePage?.content ?? currentNote.content;
+    const currentEditorType = activePage?.editorType ?? currentNote.editorType;
 
     // Get content from store, with fallbacks
     const getBlockContent = (): Block[] => {
-      if (currentNote?.content && Array.isArray(currentNote.content)) {
-        // Check if it's block content (has 'type' property with block types)
-        const first = currentNote.content[0] as any;
+      if (activeContent && Array.isArray(activeContent)) {
+        const first = activeContent[0] as any;
         if (first && first.type && ["heading", "paragraph", "code", "list", "image", "section"].includes(first.type)) {
-          return currentNote.content as Block[];
+          return activeContent as Block[];
         }
       }
       return [];
     };
 
     const getTextContent = (): string => {
-      if (currentNote?.content && typeof currentNote.content === "string") {
-        return currentNote.content;
+      if (activeContent && typeof activeContent === "string") {
+        return activeContent;
       }
       return "";
     };
 
     const getVisualContent = (): VisualNode[] => {
-      if (currentNote?.content && Array.isArray(currentNote.content)) {
-        const first = currentNote.content[0] as any;
+      if (activeContent && Array.isArray(activeContent)) {
+        const first = activeContent[0] as any;
         if (first && first.type && ["start", "process", "decision", "end"].includes(first.type)) {
-          return currentNote.content as VisualNode[];
+          return activeContent as VisualNode[];
         }
       }
       return [{ id: "1", type: "start", label: "Start", x: 200, y: 100 }];
@@ -434,22 +447,50 @@ const Index = () => {
         </div>
         )}
 
-        {/* Tabs - only show when in editor mode */}
-        {!focusMode && openTabs.length > 0 && viewMode === 'editor' && (
-          <NoteTabs
-            tabs={openTabs}
-            activeTabId={activeTabId}
-            onTabSelect={(tabId) => {
-              setActiveTabId(tabId);
-              setSelectedNoteId(tabId);
-              setShowNoteDetails(false); // Close metadata view when switching tabs
-              setViewMode('editor');
-              setOverviewTarget(null);
-            }}
-            onTabClose={handleTabClose}
-            onTabRename={handleTabRename}
-          />
-        )}
+        {/* Tabs - show current note's pages only */}
+        {!focusMode && activeTabId && viewMode === 'editor' && (() => {
+          const currentNote = getNote(activeTabId);
+          if (!currentNote) return null;
+
+          const pageTabs = (currentNote.pages || [])
+            .sort((a, b) => a.order - b.order)
+            .map(p => ({ id: p.id, title: p.title }));
+
+          // If the note has no pages yet, show the note itself as a single tab
+          const tabs = pageTabs.length > 0
+            ? pageTabs
+            : [{ id: currentNote.id, title: currentNote.title }];
+
+          const currentActiveTab = pageTabs.length > 0
+            ? (activePageId || pageTabs[0]?.id || '')
+            : currentNote.id;
+
+          return (
+            <NoteTabs
+              tabs={tabs}
+              activeTabId={currentActiveTab}
+              onTabSelect={(tabId) => {
+                if (pageTabs.length > 0) {
+                  setActivePageId(tabId);
+                }
+                setShowNoteDetails(false);
+                setViewMode('editor');
+                setOverviewTarget(null);
+              }}
+              onAddPage={() => {
+                if (activeTabId) {
+                  const note = getNote(activeTabId);
+                  if (note) {
+                    const newPage = addPage(note.id, 'New Page', note.editorType);
+                    if (newPage) {
+                      setActivePageId(newPage.id);
+                    }
+                  }
+                }
+              }}
+            />
+          );
+        })()}
 
         {renderMainContent()}
       </div>

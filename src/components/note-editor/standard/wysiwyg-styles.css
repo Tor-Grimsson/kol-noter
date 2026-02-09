@@ -1,7 +1,8 @@
 /* TipTap WYSIWYG editor typography — matches PreviewPane styles */
 
 .tiptap {
-  @apply p-6 max-w-3xl mx-auto min-h-full text-foreground;
+  @apply pt-2 pb-6 max-w-3xl mx-auto min-h-full text-foreground;
+  border: none;
   outline: none;
 }
 
@@ -11,8 +12,46 @@
 .tiptap h3 { @apply text-xl font-semibold mb-2 mt-4 text-foreground; }
 .tiptap h4 { @apply text-lg font-medium mb-2 mt-3 text-foreground; }
 
-/* Syntax marker (Typora-style heading prefix) */
-.syntax-marker { @apply text-muted-foreground opacity-50 font-normal text-base mr-1; }
+/* Syntax marker (Typora-style heading/inline prefix) */
+.syntax-marker {
+  @apply text-foreground opacity-100 font-normal;
+  font-size: inherit;
+  font-style: normal;
+  font-weight: normal;
+  text-decoration: none;
+  user-select: text;
+  pointer-events: auto;
+}
+.syntax-marker:not(.syntax-marker-inline) {
+  @apply mr-1;
+}
+
+/* Editing state — yellow border flush on image */
+.image-node-wrapper.image-editing img {
+  outline: 2px solid rgb(234 179 8 / 0.4);
+  border-radius: 4px;
+}
+
+/* Editable path input — completely invisible container */
+.image-syntax-input {
+  display: block;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  font-family: ui-monospace, monospace;
+  color: var(--muted-foreground);
+  background: transparent !important;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  margin: 0;
+  width: 100%;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.image-syntax-input::selection {
+  background: rgb(59 130 246 / 0.3);
+}
 
 /* Paragraphs */
 .tiptap p { @apply leading-7 mb-4 text-foreground; }
@@ -41,6 +80,9 @@
 /* Images */
 .tiptap img {
   @apply rounded-lg shadow-md max-w-full my-4;
+  -webkit-user-drag: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 /* Lists */

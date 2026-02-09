@@ -93,8 +93,8 @@ export async function upsertNote(db: Database, note: Note): Promise<void> {
        custom_type, custom_field1, custom_field2, custom_field3, detail_notes,
        tags_json, tag_colors_json, attachments_json,
        photos_json, voice_recordings_json, links_json, contacts_json,
-       metrics_json, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       pages_json, metrics_json, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [
       note.id,
       note.systemId,
@@ -120,6 +120,7 @@ export async function upsertNote(db: Database, note: Note): Promise<void> {
       JSON.stringify(note.voiceRecordings ?? []),
       JSON.stringify(note.links ?? []),
       JSON.stringify(note.contacts ?? []),
+      JSON.stringify(note.pages ?? []),
       note.metrics ? JSON.stringify(note.metrics) : null,
       note.createdAt,
       note.updatedAt,

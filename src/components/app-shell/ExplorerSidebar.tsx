@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import {
   Folder,
   ChevronRight,
@@ -135,7 +135,7 @@ export const ExplorerSidebar = ({
     isLoading,
   } = useNotesStore();
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedSystemId, setSelectedSystemId] = useState<string | "all">("all");
+  const [selectedSystemId, setSelectedSystemId] = useState<string | "all" | null>("all");
   const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>(undefined);
   const [expandedItems, setExpandedItems] = useState<Set<string>>(
     new Set(["system-1", "project-1", "note-1"])
@@ -158,33 +158,40 @@ export const ExplorerSidebar = ({
   }
 
   // Icon mapping for explorer items
-  const getIconComponent = (iconName?: string, className?: string) => {
-    switch (iconName) {
-      case "star": return <Star className={className} />;
-      case "heart": return <Heart className={className} />;
-      case "code": return <Code className={className} />;
-      case "book": return <Book className={className} />;
-      case "briefcase": return <Briefcase className={className} />;
-      case "home": return <Home className={className} />;
-      case "music": return <Music className={className} />;
+  const getIconComponent = (iconName?: string | null, className?: string, color?: string, fallback: "folder" | "file" = "folder") => {
+    const style = color ? { color } : undefined;
+    const name = iconName || fallback;
+    switch (name) {
+      case "star": return <Star className={className} style={style} />;
+      case "heart": return <Heart className={className} style={style} />;
+      case "code": return <Code className={className} style={style} />;
+      case "book": return <Book className={className} style={style} />;
+      case "briefcase": return <Briefcase className={className} style={style} />;
+      case "home": return <Home className={className} style={style} />;
+      case "music": return <Music className={className} style={style} />;
+      case "file": return <FileText className={className} style={style} />;
       case "folder":
-      default: return <Folder className={className} />;
+      default: return <Folder className={className} style={style} />;
     }
   };
 
   // Callback ref: focus + select text when rename input mounts
-  const focusAndSelect = (el: HTMLInputElement | null) => {
+  const focusAndSelect = useCallback((el: HTMLInputElement | null) => {
     if (el) {
       requestAnimationFrame(() => {
         el.focus();
         el.select();
       });
     }
-  };
+  }, []);
 
   // Sync overview target to sidebar selection and expand folders
   useEffect(() => {
-    if (!overviewTarget) return;
+    if (!overviewTarget) {
+      setSelectedSystemId(null);
+      setSelectedProjectId(undefined);
+      return;
+    }
 
     const newExpanded = new Set(expandedItems);
 
@@ -243,10 +250,12 @@ export const ExplorerSidebar = ({
       icon: storeProject.icon,
       notes: storeNotes
         .filter(n => n.systemId === storeSystem.id && n.projectId === storeProject.id)
+        .sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0))
         .map(note => ({
           id: note.id,
           title: note.title,
           color: note.color,
+          icon: note.icon,
           pages: [], // Pages/sections can be added later if needed
         })),
     })),
@@ -293,6 +302,50 @@ export const ExplorerSidebar = ({
       };
     }
   }, [isResizing, onWidthChange, width, COLLAPSED_THRESHOLD, MIN_WIDTH]);
+
+  // Hotkey: 'r' to rename the selected item
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if already editing, typing in an input, or modifier keys held
+      if (editingId) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || (e.target as HTMLElement)?.isContentEditable) return;
+      if (e.key !== "r") return;
+
+      // Priority: note > project > system
+      if (selectedNoteId) {
+        const note = allNotes.find(n => n.id === selectedNoteId);
+        if (note) {
+          e.preventDefault();
+          setEditingId(note.id);
+          setEditingName(note.title);
+          return;
+        }
+      }
+      if (selectedProjectId && selectedSystemId && selectedSystemId !== "all") {
+        const system = systemsWithMeta.find(s => s.id === selectedSystemId);
+        const project = system?.projects.find(p => p.id === selectedProjectId);
+        if (project) {
+          e.preventDefault();
+          setEditingId(project.id);
+          setEditingName(project.name);
+          return;
+        }
+      }
+      if (selectedSystemId && selectedSystemId !== "all") {
+        const system = systemsWithMeta.find(s => s.id === selectedSystemId);
+        if (system) {
+          e.preventDefault();
+          setEditingId(system.id);
+          setEditingName(system.name);
+        }
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [editingId, selectedNoteId, selectedProjectId, selectedSystemId, allNotes, systemsWithMeta]);
 
   const toggleItem = (itemId: string) => {
     const newExpanded = new Set(expandedItems);
@@ -433,6 +486,9 @@ export const ExplorerSidebar = ({
               {/* Rest of item - open note */}
               <button
                 onClick={() => {
+                  // Clear project/system selection so only the note is highlighted
+                  setSelectedProjectId(undefined);
+                  setSelectedSystemId(null);
                   onNoteSelect(note.id);
                   onHierarchySelect?.({
                     level: 'note',
@@ -442,7 +498,7 @@ export const ExplorerSidebar = ({
                 }}
                 className="flex-1 flex items-center gap-2 text-left"
               >
-                <FileText className="w-4 h-4 shrink-0" style={{ color: note.color }} />
+                {getIconComponent(note.icon, `w-4 h-4 shrink-0 ${!note.color ? 'text-muted-foreground' : ''}`, note.color, "file")}
                 {isEditing ? (
                   <Input
                     ref={focusAndSelect}
@@ -496,6 +552,28 @@ export const ExplorerSidebar = ({
               <button
                 className="w-6 h-6 rounded border border-border hover:scale-110 transition-transform flex items-center justify-center text-muted-foreground"
                 onClick={() => updateNote(note.id, { color: undefined })}
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </ContextMenuSubContent>
+          </ContextMenuSub>
+          <ContextMenuSub>
+            <ContextMenuSubTrigger>
+              <FileText className="w-4 h-4 mr-2" /> Change Icon
+            </ContextMenuSubTrigger>
+            <ContextMenuSubContent className="grid grid-cols-4 gap-1 p-1.5">
+              {EXPLORER_ICONS.map(i => (
+                <button
+                  key={i}
+                  className="w-6 h-6 rounded border border-border hover:scale-110 transition-transform flex items-center justify-center"
+                  onClick={() => updateNote(note.id, { icon: i })}
+                >
+                  {getIconComponent(i, "w-4 h-4")}
+                </button>
+              ))}
+              <button
+                className="w-6 h-6 rounded border border-border hover:scale-110 transition-transform flex items-center justify-center text-muted-foreground"
+                onClick={() => updateNote(note.id, { icon: undefined })}
               >
                 <X className="w-3 h-3" />
               </button>
@@ -562,7 +640,7 @@ export const ExplorerSidebar = ({
                 }}
                 className="flex-1 flex items-center gap-2 text-left"
               >
-                {getIconComponent(project.icon, `w-4 h-4 shrink-0 ${!project.color ? 'text-muted-foreground' : ''}`)}
+                {getIconComponent(project.icon, `w-4 h-4 shrink-0 ${!project.color ? 'text-muted-foreground' : ''}`, project.color)}
                 {isEditing ? (
                   <Input
                     ref={focusAndSelect}
@@ -596,6 +674,8 @@ export const ExplorerSidebar = ({
         <ContextMenuContent>
           <ContextMenuItem onClick={() => {
             const newNote = addNote(systemId, project.id, "standard");
+            setSelectedProjectId(undefined);
+            setSelectedSystemId(null);
             onNoteSelect(newNote.id, newNote.editorType);
           }}>
             <FileText className="w-4 h-4 mr-2" /> Create Note
@@ -908,7 +988,7 @@ export const ExplorerSidebar = ({
       </div>
 
       {/* Main Content */}
-      <ScrollArea className="flex-1 px-2 py-2">
+      <ScrollArea className="flex-1 px-2 py-2 select-none">
         <div className="space-y-1">
           {/* [Root] Option with Pi icon */}
           <ContextMenu>

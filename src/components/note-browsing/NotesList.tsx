@@ -17,7 +17,7 @@ interface NotesListProps {
 }
 
 export const NotesList = ({ onNoteSelect, selectedNoteId, onCardFlip, filterSystemId = "all", filterProjectId }: NotesListProps) => {
-  const { notes, addNote, updateNote, deleteNote, isLoading } = useNotesStore();
+  const { notes, addNote, updateNote, deleteNote, removeNoteTag, updateNoteTagColor, isLoading } = useNotesStore();
 
   const handleRename = (id: string, newTitle: string) => {
     updateNote(id, { title: newTitle });
@@ -33,6 +33,14 @@ export const NotesList = ({ onNoteSelect, selectedNoteId, onCardFlip, filterSyst
 
   const handleDelete = (id: string) => {
     deleteNote(id);
+  };
+
+  const handleTagRemove = (noteId: string, tag: string) => {
+    removeNoteTag(noteId, tag);
+  };
+
+  const handleTagColorChange = (noteId: string, tag: string, color: string) => {
+    updateNoteTagColor(noteId, tag, color);
   };
   const [width, setWidth] = useState(320);
   const [isResizing, setIsResizing] = useState(false);
@@ -164,6 +172,8 @@ export const NotesList = ({ onNoteSelect, selectedNoteId, onCardFlip, filterSyst
               onDelete={handleDelete}
               onColorChange={handleColorChange}
               onIconChange={handleIconChange}
+              onTagRemove={handleTagRemove}
+              onTagColorChange={handleTagColorChange}
             />
           ))}
           {filteredNotes.length === 0 && (

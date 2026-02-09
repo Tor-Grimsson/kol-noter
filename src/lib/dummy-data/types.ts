@@ -175,6 +175,20 @@ export interface System {
   projects: Project[];
 }
 
+// Page type (a single page within a note)
+export interface Page {
+  id: string;
+  noteId: string;
+  slug: string;            // filename stem: "index", "research", etc.
+  title: string;
+  preview: string;
+  order: number;           // tab display order (index.md = 0)
+  editorType: EditorType;
+  content: Block[] | string | VisualNode[];
+  createdAt: number;
+  updatedAt: number;
+}
+
 // Note type
 export interface Note {
   id: string;
@@ -191,7 +205,11 @@ export interface Note {
   coverPhotoId?: string;
   systemId: string;
   projectId: string;
+  /** Pages within this note (folder-based storage) */
+  pages: Page[];
+  /** @deprecated Use pages[n].editorType — kept for transition */
   editorType: EditorType;
+  /** @deprecated Use pages[n].content — kept for transition */
   content: Block[] | string | VisualNode[];
   attachments?: {
     [filename: string]: string; // filename -> base64 data URL

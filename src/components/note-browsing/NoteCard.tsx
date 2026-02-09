@@ -4,6 +4,7 @@ import {
   RotateCcw, Star, Calendar, Paperclip, Image as ImageIcon, FileText, Pencil, Trash2, Circle,
   Target, Lightbulb, CheckCircle, Bookmark, Heart, Flag, Tag as TagIcon
 } from "lucide-react";
+import { Tag } from "@/components/ui-elements/atoms/Tag";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -33,6 +34,7 @@ interface Note {
   preview: string;
   date: string;
   tags: string[];
+  tagColors?: { [tag: string]: string };
   favorite?: boolean;
   color?: string;
   /** Custom icon to display on card, null = hidden, string = icon name */
@@ -64,9 +66,11 @@ interface NoteCardProps {
   onDelete?: (id: string) => void;
   onColorChange?: (id: string, color: string) => void;
   onIconChange?: (id: string, icon: string | null) => void;
+  onTagRemove?: (noteId: string, tag: string) => void;
+  onTagColorChange?: (noteId: string, tag: string, color: string) => void;
 }
 
-export const NoteCard = ({ note, selectedNoteId, onSelect, onFlip, onRename, onDelete, onColorChange, onIconChange }: NoteCardProps) => {
+export const NoteCard = ({ note, selectedNoteId, onSelect, onFlip, onRename, onDelete, onColorChange, onIconChange, onTagRemove, onTagColorChange }: NoteCardProps) => {
   const [isFlipped, setIsFlipped] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(note.title);
@@ -180,12 +184,13 @@ export const NoteCard = ({ note, selectedNoteId, onSelect, onFlip, onRename, onD
           <div className="flex items-center justify-between">
             <div className="flex gap-1.5">
               {note.tags.slice(0, 2).map((tag) => (
-                <span
+                <Tag
                   key={tag}
-                  className="text-xs px-2 py-0.5 rounded bg-muted text-muted-foreground"
-                >
-                  {tag}
-                </span>
+                  label={tag}
+                  color={note.tagColors?.[tag]}
+                  variant="default"
+                  size="sm"
+                />
               ))}
             </div>
             <span className="text-sm text-muted-foreground">{note.date}</span>
@@ -283,14 +288,19 @@ export const NoteCard = ({ note, selectedNoteId, onSelect, onFlip, onRename, onD
                 <div className="text-sm uppercase tracking-wider text-muted-foreground font-semibold">
                   Tags
                 </div>
-                <div className="flex flex-wrap gap-1.5">
+                <div className="flex flex-wrap gap-1.5" onClick={e => e.stopPropagation()}>
                   {note.tags.map((tag) => (
-                    <span
+                    <Tag
                       key={tag}
-                      className="text-xs px-2 py-0.5 rounded bg-muted text-muted-foreground"
-                    >
-                      {tag}
-                    </span>
+                      label={tag}
+                      color={note.tagColors?.[tag]}
+                      variant="default"
+                      size="sm"
+                      removable
+                      onRemove={() => onTagRemove?.(note.id, tag)}
+                      showColorPicker
+                      onColorChange={(color) => onTagColorChange?.(note.id, tag, color)}
+                    />
                   ))}
                   {note.tags.length === 0 && (
                     <span className="text-sm text-muted-foreground">No tags</span>

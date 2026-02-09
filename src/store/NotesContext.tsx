@@ -2,6 +2,7 @@ import { createContext, useContext, ReactNode, useRef, useCallback, useEffect } 
 import { useQueryClient } from "@tanstack/react-query";
 import { useVault } from "@/components/vault-system/VaultProvider";
 import { filesystemAdapter } from "@/lib/persistence/filesystem-adapter";
+import { generateSlug } from "@/lib/serialization/note-serializer";
 import { getDb } from "@/lib/db/client";
 import { queryKeys } from "@/lib/db/query-keys";
 import {
@@ -44,12 +45,13 @@ import {
   Project,
   System,
   Note,
+  Page,
 } from "@/lib/dummy-data";
 
 // Re-export types for backward compatibility
 export type { EditorType, HealthStatus, PriorityLevel, ItemStatus, ItemMetrics, TagWithColor };
 export { TAG_COLOR_PRESETS, EXPLORER_COLORS, TAG_COLOR_INVERSES, EXPLORER_ICONS };
-export type { Block, VisualNode, Reminder, Attachment, Photo, VoiceRecording, SavedLink, Contact, Project, System, Note };
+export type { Block, VisualNode, Reminder, Attachment, Photo, VoiceRecording, SavedLink, Contact, Project, System, Note, Page };
 
 interface NotesStore {
   systems: System[];
@@ -71,6 +73,7 @@ interface NotesStore {
   getProject: (systemId: string, projectId: string) => Project | undefined;
   // Note operations
   addNote: (systemId: string, projectId: string, editorType: EditorType) => Note;
+  addPage: (noteId: string, title: string, editorType: EditorType) => Page | null;
   updateNote: (id: string, updates: Partial<Omit<Note, "id">>) => void;
   updateNoteContent: (id: string, content: Block[] | string | VisualNode[]) => void;
   saveAttachment: (noteId: string, filename: string, dataUrl: string) => void;
@@ -197,6 +200,8 @@ export function NotesProvider({ children }: { children: ReactNode }) {
    * Optimistically updates the React Query cache so data is available immediately.
    */
   const persistSystem = useCallback(async (system: System) => {
+    // Cancel in-flight refetches so they don't overwrite the optimistic update
+    await queryClient.cancelQueries({ queryKey: queryKeys.systems.all });
     // Optimistic update — make data available to consumers immediately
     queryClient.setQueryData<System[]>(queryKeys.systems.all, (old = []) => {
       const idx = old.findIndex(s => s.id === system.id);
@@ -229,6 +234,8 @@ export function NotesProvider({ children }: { children: ReactNode }) {
    * Optimistically updates the React Query cache so data is available immediately.
    */
   const persistProject = useCallback(async (systemId: string, project: Project) => {
+    // Cancel in-flight refetches so they don't overwrite the optimistic update
+    await queryClient.cancelQueries({ queryKey: queryKeys.systems.all });
     // Optimistic update — update the project within its parent system
     queryClient.setQueryData<System[]>(queryKeys.systems.all, (old = []) => {
       return old.map(s => {
@@ -261,6 +268,8 @@ export function NotesProvider({ children }: { children: ReactNode }) {
    * Optimistically updates the React Query cache so data is available immediately.
    */
   const persistNote = useCallback(async (note: Note) => {
+    // Cancel in-flight refetches so they don't overwrite the optimistic update
+    await queryClient.cancelQueries({ queryKey: queryKeys.notes.all });
     // Optimistic update — make data available to consumers immediately
     queryClient.setQueryData<Note[]>(queryKeys.notes.all, (old = []) => {
       const idx = old.findIndex(n => n.id === note.id);
@@ -304,6 +313,17 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     const system = systems.find(s => s.id === id);
     if (!system) return;
     const updated = { ...system, name, updatedAt: Date.now() };
+
+    // Optimistic update — show new name in UI immediately
+    queryClient.setQueryData<System[]>(queryKeys.systems.all, (old = []) => {
+      const idx = old.findIndex(s => s.id === id);
+      if (idx >= 0) {
+        const copy = [...old];
+        copy[idx] = updated;
+        return copy;
+      }
+      return old;
+    });
 
     if (isFilesystem && system.name !== name) {
       // Rename folder on disk before persisting (idMap must update first)
@@ -376,6 +396,20 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     if (!project) return;
     const updated = { ...project, name, updatedAt: Date.now() };
 
+    // Optimistic update — show new name in UI immediately
+    queryClient.setQueryData<System[]>(queryKeys.systems.all, (old = []) => {
+      return old.map(s => {
+        if (s.id !== systemId) return s;
+        const pidx = s.projects.findIndex(p => p.id === projectId);
+        if (pidx >= 0) {
+          const projects = [...s.projects];
+          projects[pidx] = updated;
+          return { ...s, projects };
+        }
+        return s;
+      });
+    });
+
     if (isFilesystem && project.name !== name) {
       filesystemAdapter.renameProject(projectId, name).then(() => {
         persistProject(systemId, updated);
@@ -447,14 +481,29 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         break;
     }
 
+    const noteId = generateId();
+    const indexPage: Page = {
+      id: `${noteId}-index`,
+      noteId,
+      slug: 'index',
+      title: 'Untitled',
+      preview: '',
+      order: 0,
+      editorType,
+      content: defaultContent,
+      createdAt: now,
+      updatedAt: now,
+    };
+
     const newNote: Note = {
-      id: generateId(),
+      id: noteId,
       title: "Untitled",
       preview: "",
       date: formatDate(),
       tags: [],
       systemId,
       projectId,
+      pages: [indexPage],
       editorType,
       content: defaultContent,
       createdAt: now,
@@ -465,10 +514,66 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     return newNote;
   };
 
+  const addPage = (noteId: string, title: string, editorType: EditorType): Page | null => {
+    const note = notes.find(n => n.id === noteId);
+    if (!note) return null;
+
+    const now = Date.now();
+    let defaultContent: Block[] | string | VisualNode[];
+    switch (editorType) {
+      case "standard": defaultContent = ""; break;
+      case "visual": defaultContent = [{ id: generateId(), type: "start" as const, label: "Start", x: 200, y: 100 }]; break;
+      case "modular": default: defaultContent = []; break;
+    }
+
+    const existingSlugs = (note.pages || []).map(p => p.slug);
+    let slug = generateSlug(title || 'untitled');
+    if (existingSlugs.includes(slug)) {
+      let counter = 1;
+      while (existingSlugs.includes(`${slug}-${counter}`)) counter++;
+      slug = `${slug}-${counter}`;
+    }
+
+    const maxOrder = Math.max(0, ...(note.pages || []).map(p => p.order));
+
+    const newPage: Page = {
+      id: generateId(),
+      noteId,
+      slug,
+      title: title || 'Untitled',
+      preview: '',
+      order: maxOrder + 1,
+      editorType,
+      content: defaultContent,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const updatedNote: Note = {
+      ...note,
+      pages: [...(note.pages || []), newPage],
+      updatedAt: now,
+    };
+
+    persistNote(updatedNote);
+    return newPage;
+  };
+
   const updateNote = (id: string, updates: Partial<Omit<Note, "id">>) => {
     const note = notes.find(n => n.id === id);
     if (!note) return;
     const updated: Note = { ...note, ...updates, updatedAt: Date.now() };
+
+    // Optimistic update — show changes in UI immediately
+    queryClient.setQueryData<Note[]>(queryKeys.notes.all, (old = []) => {
+      const idx = old.findIndex(n => n.id === id);
+      if (idx >= 0) {
+        const copy = [...old];
+        copy[idx] = updated;
+        return copy;
+      }
+      return old;
+    });
 
     if (isFilesystem && updates.title && updates.title !== note.title) {
       filesystemAdapter.renameNote(id, updates.title).then(() => {
@@ -552,7 +657,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       })
     );
 
-    // Persist: save attachment file + targeted SQLite update
+    // Persist: save attachment file + targeted SQLite update + frontmatter
     if (isFilesystem && vaultPath) {
       (async () => {
         try {
@@ -562,6 +667,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
           const latestNote = queryClient.getQueryData<Note[]>(queryKeys.notes.all)?.find(n => n.id === noteId);
           if (latestNote) {
             await upsertNote(db, latestNote);
+            await filesystemAdapter.saveNote(latestNote);
           }
         } catch (err) {
           console.error('[NotesStore] Failed to save attachment:', err);
@@ -1277,7 +1383,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       })
     );
 
-    // Save the photo file and update SQLite
+    // Save the photo file and update SQLite + frontmatter
     if (isFilesystem && vaultPath) {
       (async () => {
         try {
@@ -1287,6 +1393,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
           const latestNote = queryClient.getQueryData<Note[]>(queryKeys.notes.all)?.find(n => n.id === noteId);
           if (latestNote) {
             await upsertNote(db, latestNote);
+            await filesystemAdapter.saveNote(latestNote);
           }
         } catch (err) {
           console.error('[NotesStore] Failed to save photo:', err);
@@ -1475,6 +1582,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     deleteProject,
     getProject,
     addNote,
+    addPage,
     updateNote,
     updateNoteContent,
     saveAttachment,

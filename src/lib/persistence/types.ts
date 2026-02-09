@@ -5,7 +5,7 @@
  * by different backends (localStorage, file system, etc.)
  */
 
-import type { System, Note, Project, EditorType } from '@/store/NotesContext';
+import type { System, Note, Project, EditorType, Page } from '@/store/NotesContext';
 
 /**
  * Result of a vault load operation
@@ -186,7 +186,42 @@ export interface IdMap {
 }
 
 /**
- * File metadata stored in YAML frontmatter
+ * Note-level metadata stored in _note.md frontmatter (folder-based notes)
+ */
+export interface NoteMetadataFrontmatter {
+  id: string;
+  tags?: string[];
+  tagColors?: Record<string, string>;
+  favorite?: boolean;
+  color?: string;
+  icon?: string | null;
+  customType?: string;
+  metrics?: {
+    health?: string;
+    priority?: string;
+    lead?: string;
+    targetDate?: string;
+    status?: string;
+  };
+  photos?: string[];
+  files?: string[];
+  created: string;  // ISO date string
+  updated: string;  // ISO date string
+}
+
+/**
+ * Page metadata stored in page .md file frontmatter (folder-based notes)
+ */
+export interface PageFrontmatter {
+  id: string;
+  editorType: EditorType;
+  order: number;
+  created: string;  // ISO date string
+  updated: string;  // ISO date string
+}
+
+/**
+ * File metadata stored in YAML frontmatter (legacy flat-file notes)
  */
 export interface NoteFrontmatter {
   id: string;
@@ -270,6 +305,7 @@ export const STORAGE_KEYS = {
 export const FILE_PATTERNS = {
   SYSTEM_METADATA: '_system.md',
   PROJECT_METADATA: '_project.md',
+  NOTE_METADATA: '_note.md',
   VISUAL_SIDECAR_SUFFIX: '.visual.json',
   ASSETS_DIR: '_assets',
   CONFIG_DIR: '.kol-noter',
